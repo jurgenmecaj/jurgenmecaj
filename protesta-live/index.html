@@ -265,13 +265,14 @@ function drawArsimi(c, b, t) {
   c.fillStyle = '#3d556a'; c.fillRect(148, 516, 4, 44);
 }
 
+// Radha majtas → djathtas (numrat 1, 2, 3 në chat): Ministria e Arsimit, Bashkia, Kryeministria
 const BUILD = [
-  { id: 'bashkia', label: 'BASHKIA', x: 30, y: 520, w: 300, h: 640, hit: { x: 20, y: 190, w: 260, h: 400 }, draw: drawBashkia,
-    sil: mkSil(p => { p.rect(0, 160, 300, 480); p.rect(105, 60, 90, 100); p.moveTo(93, 62); p.lineTo(207, 62); p.lineTo(150, 0); p.closePath(); }) },
-  { id: 'kryeministria', label: 'KRYEMINISTRIA', x: 380, y: 660, w: 320, h: 500, hit: { x: 20, y: 170, w: 280, h: 310 }, draw: drawKrye, post: postKrye,
-    sil: mkSil(p => { p.rect(0, 150, 320, 350); p.moveTo(0, 150); p.lineTo(320, 150); p.lineTo(160, 52); p.closePath(); }) },
-  { id: 'arsimi', label: 'MINISTRIA E ARSIMIT', x: 750, y: 600, w: 300, h: 560, hit: { x: 15, y: 105, w: 270, h: 430 }, draw: drawArsimi,
+  { id: 'arsimi', label: 'MINISTRIA E ARSIMIT', short: 'ARSIMI', x: 30, y: 600, w: 300, h: 560, hit: { x: 15, y: 105, w: 270, h: 430 }, draw: drawArsimi,
     sil: mkSil(p => { p.rect(0, 90, 300, 470); p.rect(40, 30, 220, 70); }) },
+  { id: 'bashkia', label: 'BASHKIA', short: 'BASHKIA', x: 390, y: 520, w: 300, h: 640, hit: { x: 20, y: 190, w: 260, h: 400 }, draw: drawBashkia,
+    sil: mkSil(p => { p.rect(0, 160, 300, 480); p.rect(105, 60, 90, 100); p.moveTo(93, 62); p.lineTo(207, 62); p.lineTo(150, 0); p.closePath(); }) },
+  { id: 'kryeministria', label: 'KRYEMINISTRIA', short: 'KRYEMINISTRIA', x: 740, y: 660, w: 320, h: 500, hit: { x: 20, y: 170, w: 280, h: 310 }, draw: drawKrye, post: postKrye,
+    sil: mkSil(p => { p.rect(0, 150, 320, 350); p.moveTo(0, 150); p.lineTo(320, 150); p.lineTo(160, 52); p.closePath(); }) },
 ];
 for (const b of BUILD) {
   b.splat = document.createElement('canvas'); b.splat.width = b.w; b.splat.height = b.h; b.sx = b.splat.getContext('2d');
@@ -280,7 +281,7 @@ for (const b of BUILD) {
 const bById = id => BUILD.find(b => b.id === id);
 // Foto reale opsionale: vendos assets/bashkia.png, assets/kryeministria.png, assets/arsimi.png (PNG/JPG, çdo madhësi)
 // pozicionimi kur ka foto reale (Kryeministria në qendër prapa, dy të tjerat përpara)
-const FIT = { bashkia: { w: 380, x: 0, base: 1160, z: 1 }, kryeministria: { w: 440, cx: 540, base: 1148, z: 0 }, arsimi: { w: 400, x: 680, base: 1160, z: 1 } };
+const FIT = { arsimi: { w: 380, x: 0, base: 1160, z: 1 }, bashkia: { w: 440, cx: 540, base: 1148, z: 0 }, kryeministria: { w: 400, x: 680, base: 1160, z: 1 } };
 let DRAW_ORDER = BUILD.slice();
 function applyPhoto(b, im) {
   const f = FIT[b.id];
@@ -964,7 +965,7 @@ function drawChallenge() {
     const g = ctx.createLinearGradient(x, 0, x + w, 0); g.addColorStop(0, '#7cf0ff'); g.addColorStop(1, '#b84dff'); ctx.fillStyle = g; rr(ctx, x + 24, y + 50, Math.max(20, bw * f), 20, 10); ctx.fill();
     ctx.fillStyle = '#fff'; ctx.font = '800 15px "Segoe UI",Arial,sans-serif'; ctx.fillText(`${Math.min(c.n, c.goal)} / ${c.goal}`, x + w / 2, y + 61);
   } else {
-    const bw = (w - 48 - 24) / 3, mx = Math.max(1, ...c.votes), names = ['1  BASHKIA', '2  KRYEMINISTRIA', '3  ARSIMI'];
+    const bw = (w - 48 - 24) / 3, mx = Math.max(1, ...c.votes), names = BUILD.map((b, i) => `${i + 1}  ${b.short}`);
     for (let i = 0; i < 3; i++) {
       const bx = x + 24 + i * (bw + 12);
       ctx.fillStyle = 'rgba(255,255,255,.15)'; rr(ctx, bx, y + 50, bw, 34, 10); ctx.fill();
@@ -1132,7 +1133,7 @@ function drawHUD(t) {
     ctx.font = '700 13px "Segoe UI",Arial,sans-serif'; ctx.fillStyle = '#ffd60a'; ctx.fillText(`💎 ${tr.min}+`, x + lw / 2, 1750);
   });
   ctx.font = '700 22px "Segoe UI",Arial,sans-serif'; ctx.fillStyle = 'rgba(255,255,255,.9)';
-  outlined(ctx, 'Shkruaj në chat:  1 = Bashkia   2 = Kryeministria   3 = Arsimi  (zgjedh godinën)', W / 2, 1782, '#fff', 'rgba(0,0,0,.8)', 4);
+  outlined(ctx, 'Shkruaj në chat:  ' + BUILD.map((b, i) => `${i + 1} = ${b.short[0] + b.short.slice(1).toLowerCase()}`).join('   ') + '  (zgjedh godinën)', W / 2, 1782, '#fff', 'rgba(0,0,0,.8)', 4);
   outlined(ctx, `🚔 LIKE kthen të ndaluarit  ·  dhuratë 💎${CFG.copHitMin}+ e rrëzon policinë!`, W / 2, 1814, '#ffd60a', 'rgba(0,0,0,.8)', 4);
   if (S.detained.length) {
     const nm = S.detained.slice(0, 3).map(d => '@' + (d.name.length > 9 ? d.name.slice(0, 8) + '…' : d.name)).join(' ') + (S.detained.length > 3 ? ` +${S.detained.length - 3}` : '');

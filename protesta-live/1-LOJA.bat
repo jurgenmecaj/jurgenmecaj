@@ -23,12 +23,14 @@ if errorlevel 1 (
   exit /b 1
 )
 
+echo Po mbyll instanca te vjetra te lojes ^(nese ka^)...
+powershell -NoProfile -Command "foreach($p in %PORT%,%WSPORT%){ Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue | ForEach-Object { $pr = Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue; if($pr -and $pr.ProcessName -match '^(python|pythonw|py)$'){ Write-Host ('  mbyllet PID ' + $_.OwningProcess); Stop-Process -Id $_.OwningProcess -Force } } }" 2>nul
+
 echo [1/2] Po kontrolloj bibliotekat...
 %PY% -m pip install -q websockets
 
-echo [2/2] Po hap lojen ^(faqja %PORT%, lidhja %WSPORT%^)...
-start "" cmd /c "timeout /t 3 /nobreak >nul && start msedge --app=http://localhost:%PORT%/?ws=ws://localhost:%WSPORT% --window-size=540,960"
-%PY% server.py %DEMO% --http-port %PORT% --ws-port %WSPORT%
+echo [2/2] Po nis lojen ^(faqja %PORT%, lidhja %WSPORT%^)... Dritarja hapet kur serveri te jete gati.
+%PY% server.py %DEMO% --open --http-port %PORT% --ws-port %WSPORT%
 echo.
 echo Serveri i lojes u ndal. Shih gabimin me siper.
 pause

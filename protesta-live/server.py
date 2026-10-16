@@ -16,7 +16,11 @@ import http.server
 import json
 import logging
 import random
+import os
+import subprocess
+import sys
 import threading
+import time
 import urllib.request
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -26,6 +30,7 @@ import websockets
 log = logging.getLogger("loja")
 ROOT = Path(__file__).resolve().parent
 clients: set = set()
+APP_ID = "protesta-live"
 ALLOWED_AVATAR_HOSTS = ("tiktokcdn", "ibyteimg", "byteimg", "tiktokv", "byteoversea", "muscdn", "ibytedtos", "bytedance")
 
 
@@ -41,6 +46,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self):
         url = urlparse(self.path)
+        if url.path == "/__id":  # për të njohur nëse porta mbahet nga një instancë e kësaj loje
+            body = json.dumps({"app": APP_ID, "root": str(ROOT)}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if url.path != "/avatar":
             return super().do_GET()
         target = (parse_qs(url.query).get("u") or [""])[0]
@@ -62,6 +75,41 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+
+    def do_POST(self):
+        if urlparse(self.path).path == "/__shutdown":  # instanca e re mbyll të vjetrën
+            self.send_response(200)
+            self.end_headers()
+            threading.Timer(0.3, lambda: os._exit(0)).start()
+            return
+        self.send_error(404)
+
+
+def stop_old_instance(port: int) -> bool:
+    """Nëse porta mbahet nga një instancë e vjetër e kësaj loje, e mbyll."""
+    try:
+        with urllib.request.urlopen(f"http://localhost:{port}/__id", timeout=2) as r:
+            if json.loads(r.read()).get("app") != APP_ID:
+                return False
+        urllib.request.urlopen(urllib.request.Request(f"http://localhost:{port}/__shutdown", method="POST"), timeout=2)
+        time.sleep(1.2)
+        return True
+    except Exception:
+        return False
+
+
+def open_window(http_port: int, ws_port: int) -> None:
+    """Hap lojën si dritare pa shirit adresash (Edge/Chrome); URL e re çdo herë për të shmangur cache-n."""
+    url = f"http://localhost:{http_port}/?ws=ws://localhost:{ws_port}&v={int(time.time())}"
+    try:
+        if sys.platform == "win32":
+            subprocess.Popen(["cmd", "/c", "start", "", "msedge", f"--app={url}", "--window-size=540,960"])
+        else:
+            import webbrowser
+            webbrowser.open(url)
+    except Exception:
+        log.info("Hape vetë në shfletues: %s", url)
 
 
 def serve_http(port: int) -> None:
@@ -110,17 +158,34 @@ async def main() -> None:
     ap.add_argument("--demo", action="store_true", help="ngjarje të simuluara, pa TikTok")
     ap.add_argument("--ws-port", type=int, default=8124)
     ap.add_argument("--http-port", type=int, default=8123)
+    ap.add_argument("--open", action="store_true", help="hap dritaren e lojës pasi serveri niset")
     args = ap.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
     try:
-        serve_http(args.http_port)
+        try:
+            serve_http(args.http_port)
+        except OSError:
+            if not stop_old_instance(args.http_port):
+                raise
+            log.info("U mbyll një instancë e vjetër e lojës në portën %d.", args.http_port)
+            serve_http(args.http_port)
     except OSError:
         raise SystemExit(f"Porta {args.http_port} eshte e zene nga nje aplikacion tjeter. Provo: python server.py --http-port 9123")
     try:
-        ws_server = await websockets.serve(ws_handler, "0.0.0.0", args.ws_port)
+        for attempt in range(3):  # porta e lidhjes mund të çlirohet pak më vonë nga instanca e vjetër
+            try:
+                ws_server = await websockets.serve(ws_handler, "0.0.0.0", args.ws_port)
+                break
+            except OSError:
+                if attempt == 2:
+                    raise
+                await asyncio.sleep(1)
     except OSError:
         raise SystemExit(f"Porta {args.ws_port} eshte e zene. Provo: python server.py --ws-port 9124")
+    log.info("Folderi i lojës: %s", ROOT)
+    if args.open:
+        open_window(args.http_port, args.ws_port)
     log.info("LOJA GATI: hap http://localhost:%d   (TikTok lidhet më vonë me tiktok_bridge.py)", args.http_port)
     async with ws_server:
         if args.demo:

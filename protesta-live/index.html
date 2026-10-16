@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="sq">
+<head>
+<meta charset="utf-8">
+<title>Protesta Live – Loja satirike</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  html,body{margin:0;height:100%;background:#000;overflow:hidden}
+  canvas{position:absolute;display:block}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+(() => {
+'use strict';
+
+/* =====================================================================
+   PROTESTA LIVE – lojë satirike për TikTok LIVE (animacion, pa dhunë reale)
+   Parametra URL:  ?demo=1  simulim automatik   ?ws=ws://host:port   ?mute=1
+                   ?debug=1 shfaq statusin      Tastet: J join, 1-5 dhurata, L like, M zë
+   ===================================================================== */
+
+const W = 1080, H = 1920;
+const Q = new URLSearchParams(location.search);
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+
+/* ------------------------------ konfigurim ------------------------------ */
+const CFG = {
+  wsUrl: Q.get('ws') || 'ws://localhost:8765',
+  maxCrowd: 70,
+  ambient: 10,                 // protestues "figurantë" kur nuk ka njeri
+  laneTop: 1285, laneBottom: 1540,
+};
+
+// Nivelet e dhuratave sipas diamanteve për një dhuratë
+const TIERS = [
+  { min: 1,   key: 'paint',   label: 'Bojë',          icon: '🎨' },
+  { min: 10,  key: 'bomb',    label: 'Bombë me bojë', icon: '💥' },
+  { min: 30,  key: 'stone',   label: 'Gur',           icon: '🪨' },
+  { min: 100, key: 'molotov', label: 'Molotov',       icon: '🔥' },
+  { min: 500, key: 'finale',  label: 'FINALE',        icon: '🎆' },
+];
+const tierOf = d => { let t = TIERS[0]; for (const x of TIERS) if (d >= x.min) t = x; return t; };
+
+const INK = ['#ff2e63', '#08d9d6', '#fcff00', '#7cff3a', '#b84dff', '#ff8a00', '#2e86ff'];
+const JACKETS = ['#e63946', '#2a9d8f', '#e9c46a', '#457b9d', '#9b5de5', '#f77f00', '#06d6a0', '#ef476f', '#118ab2', '#ffd166', '#8338ec', '#fb5607'];
+const SKINS = ['#f2c9a0', '#e0a97c', '#c68642', '#8d5524', '#ffdbac'];
+const HAIR = ['#1b1b1b', '#3b2314', '#6b3e1b', '#c49a3a', '#8a8a8a', '#7a1f1f'];
+const SLOGANS = ['DREJTËSI!', 'ARSIM!', 'ZËRI YT', 'NDRYSHIM', 'TRANSPARENCË', 'MJAFT!', 'RINIA', 'FUTURI', 'SHPRESË', 'BASHKË!', 'LIRI'];
+const NAMES_DEMO = ['Arbër', 'Elira', 'Dritan', 'Blerta', 'Gent', 'Sara', 'Kristi', 'Ola', 'Mark', 'Jon', 'Era', 'Rei', 'Besa', 'Alban', 'Fjolla', 'Leart', 'Dea', 'Enea'];
+
+/* ------------------------------ ndihmëse ------------------------------ */
+const rnd = (a, b) => a + Math.random() * (b - a);
+const rint = (a, b) => Math.floor(rnd(a, b + 1));
+const pick = a => a[Math.floor(Math.random() * a.length)];
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+function rr(c, x, y, w, h, r) {
+  c.beginPath(); c.moveTo(x + r, y);
+  c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r);
+  c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath();
+}
+function fitText(c, text, maxW, size, weight = '800') {
+  let s = size;
+  do { c.font = `${weight} ${s}px "Segoe UI", Arial, sans-serif`; s -= 2; }
+  while (c.measureText(text).width > maxW && s > 12);
+}
+function outlined(c, text, x, y, fill, stroke = 'rgba(0,0,0,.85)', lw = 5) {
+  c.lineJoin = 'round'; c.lineWidth = lw; c.strokeStyle = stroke; c.strokeText(text, x, y);
+  c.fillStyle = fill; c.fillText(text, x, y);
+}
+function fit() {
+  const s = Math.min(innerWidth / W, innerHeight / H);
+  cv.style.width = W * s + 'px'; cv.style.height = H * s + 'px';
+  cv.style.left = (innerWidth - W * s) / 2 + 'px'; cv.style.top = (innerHeight - H * s) / 2 + 'px';
+}
+addEventListener('resize', fit); fit();
+
+/* ------------------------------ zëri ------------------------------ */
+const sfx = (() => {
+  let ac = null, muted = Q.has('mute'), last = {};
+  const A = () => {
+    if (muted) return null;
+    try { if (!ac) ac = new (window.AudioContext || window.webkitAudioContext)(); if (ac.state === 'suspended') ac.resume(); return ac; }
+    catch (e) { return null; }
+  };
+  const tone = (f0, f1, dur, vol, type = 'sine', delay = 0) => {
+    const a = A(); if (!a) return;
+    const o = a.createOscillator(), g = a.createGain(), t = a.currentTime + delay;
+    o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(f1, 20), t + dur);
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(a.destination); o.start(t); o.stop(t + dur + 0.05);
+  };
+  const noise = (dur, vol, fc, delay = 0) => {
+    const a = A(); if (!a) return;
+    const n = Math.floor(a.sampleRate * dur), buf = a.createBuffer(1, n, a.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+    const s = a.createBufferSource(), f = a.createBiquadFilter(), g = a.createGain(), t = a.currentTime + delay;
+    s.buffer = buf; f.type = 'lowpass'; f.frequency.value = fc; g.gain.value = vol;
+    s.connect(f); f.connect(g); g.connect(a.destination); s.start(t);
+  };
+  const gate = (k, ms, fn) => () => { const n = performance.now(); if (n - (last[k] || 0) < ms) return; last[k] = n; fn(); };
+  return {
+    toggle() { muted = !muted; },
+    join: gate('join', 120, () => { tone(520, 780, .16, .07, 'triangle'); tone(780, 1040, .18, .05, 'triangle', .09); }),
+    whoosh: gate('wh', 60, () => noise(.3, .05, 2200)),
+    splat: gate('sp', 50, () => { noise(.16, .10, 1000); tone(220, 70, .14, .07); }),
+    crack: gate('cr', 60, () => { noise(.14, .16, 3500); tone(130, 50, .2, .10, 'square'); }),
+    boom: gate('bm', 150, () => { noise(.7, .2, 600); tone(100, 30, .55, .18, 'sawtooth'); }),
+    win: gate('wn', 500, () => { [523, 659, 784, 1046].forEach((f, i) => tone(f, f * 1.01, .25, .07, 'triangle', i * .09)); }),
+  };
+})();
+addEventListener('pointerdown', () => sfx.whoosh());
+
+/* ------------------------------ gjendja ------------------------------ */
+const S = {
+  t: 0, crowd: [], byName: new Map(), proj: [], parts: [], floats: [], timers: [],
+  queue: [], banner: null, scores: {}, prefs: {}, hits: 0, joined: 0,
+  shake: 0, flash: 0, flashCol: '#ff8a00', status: 'offline', likeBudget: 0,
+};
+const later = (sec, fn) => S.timers.push({ at: S.t + sec, fn });
+
+/* ------------------------------ sfondi (statik) ------------------------------ */
+const bg = document.createElement('canvas'); bg.width = W; bg.height = H;
+const vig = document.createElement('canvas'); vig.width = W; vig.height = H;
+(function buildBG() {
+  const g = bg.getContext('2d');
+  let gr = g.createLinearGradient(0, 0, 0, 1180);
+  gr.addColorStop(0, '#060a1f'); gr.addColorStop(.45, '#26144d'); gr.addColorStop(.8, '#85305f'); gr.addColorStop(1, '#ff7a5c');
+  g.fillStyle = gr; g.fillRect(0, 0, W, 1250);
+  for (let i = 0; i < 170; i++) { g.fillStyle = `rgba(255,255,255,${rnd(.2, .9)})`; const s = rnd(.8, 2.4); g.fillRect(rnd(0, W), rnd(0, 760), s, s); }
+  // hëna
+  const mg = g.createRadialGradient(950, 450, 10, 950, 450, 130);
+  mg.addColorStop(0, 'rgba(255,245,210,.55)'); mg.addColorStop(1, 'rgba(255,245,210,0)');
+  g.fillStyle = mg; g.fillRect(800, 300, 300, 300);
+  g.fillStyle = '#fff4d0'; g.beginPath(); g.arc(950, 450, 44, 0, 7); g.fill();
+  g.fillStyle = 'rgba(200,190,160,.45)'; g.beginPath(); g.arc(938, 440, 9, 0, 7); g.arc(962, 462, 6, 0, 7); g.fill();
+  // horizonti i qytetit (dy shtresa)
+  for (const [col, hmin, hmax, wmin, wmax] of [['#1a0f3a', 120, 380, 40, 90], ['#241552', 80, 260, 36, 70]]) {
+    let x = -10;
+    while (x < W + 20) {
+      const w = rnd(wmin, wmax), h = rnd(hmin, hmax);
+      g.fillStyle = col; g.fillRect(x, 1170 - h, w, h);
+      for (let wy = 1170 - h + 12; wy < 1160; wy += 22) for (let wx = x + 8; wx < x + w - 10; wx += 16)
+        if (Math.random() < .32) { g.fillStyle = 'rgba(255,214,120,.55)'; g.fillRect(wx, wy, 6, 9); }
+      x += w + rnd(0, 8);
+    }
+  }
+  // trotuar + rrugë
+  g.fillStyle = '#3a3454'; g.fillRect(0, 1160, W, 80);
+  g.fillStyle = '#4b4468'; g.fillRect(0, 1160, W, 8);
+  g.fillStyle = '#2a2540'; g.fillRect(0, 1232, W, 8);
+  gr = g.createLinearGradient(0, 1240, 0, H); gr.addColorStop(0, '#201c33'); gr.addColorStop(1, '#0d0b16');
+  g.fillStyle = gr; g.fillRect(0, 1240, W, H - 1240);
+  g.strokeStyle = 'rgba(255,255,255,.04)'; g.lineWidth = 2;
+  for (let y = 1260; y < H; y += 46) { g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
+  for (let y = 1260, r = 0; y < H; y += 46, r++) for (let x = (r % 2) * 40; x < W; x += 80) { g.beginPath(); g.moveTo(x, y); g.lineTo(x, y + 46); g.stroke(); }
+  // llamba
+  for (const lx of [185, 540, 895]) {
+    g.fillStyle = '#15121f'; g.fillRect(lx - 5, 940, 10, 230); g.fillRect(lx - 24, 935, 48, 10);
+    const lg = g.createRadialGradient(lx, 950, 4, lx, 950, 190);
+    lg.addColorStop(0, 'rgba(255,220,140,.5)'); lg.addColorStop(1, 'rgba(255,220,140,0)');
+    g.fillStyle = lg; g.fillRect(lx - 190, 760, 380, 380);
+    g.fillStyle = '#ffe9a8'; g.beginPath(); g.arc(lx, 948, 9, 0, 7); g.fill();
+  }
+  // vinjeta
+  const v = vig.getContext('2d');
+  const vg = v.createRadialGradient(W / 2, H / 2, 500, W / 2, H / 2, 1250);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.6)');
+  v.fillStyle = vg; v.fillRect(0, 0, W, H);
+})();
+
+/* ------------------------------ godinat ------------------------------ */
+function win(c, b, i, x, y, w, h, t) {
+  const lit = ((i * 2654435761) >>> 0) % 100 > 32;
+  let col = lit ? '#ffd978' : '#2c2b4a';
+  if (lit && b.heat > 55 && Math.sin(t * 9 + i * 1.7) > .2) col = '#ff6a4a';
+  c.fillStyle = col; rr(c, x, y, w, h, 4); c.fill();
+  c.strokeStyle = 'rgba(0,0,0,.35)'; c.lineWidth = 2; c.stroke();
+  c.beginPath(); c.moveTo(x + w / 2, y); c.lineTo(x + w / 2, y + h); c.moveTo(x, y + h / 2); c.lineTo(x + w, y + h / 2); c.stroke();
+}
+const poly = (c, pts) => { c.beginPath(); pts.forEach((p, i) => i ? c.lineTo(p[0], p[1]) : c.moveTo(p[0], p[1])); c.closePath(); };
+const mkSil = f => { const p = new Path2D(); f(p); return p; };
+
+function drawBashkia(c, b, t) {
+  c.fillStyle = '#d9c7a0'; c.fillRect(0, 160, 300, 480);
+  c.fillStyle = '#e6d6b2'; c.fillRect(105, 60, 90, 100);
+  c.fillStyle = '#8a3b3b'; poly(c, [[93, 62], [207, 62], [150, 0]]); c.fill();
+  c.fillStyle = '#b39f73'; c.fillRect(-8, 150, 316, 16); c.fillRect(-4, 610, 308, 30);
+  c.fillStyle = '#fff'; c.beginPath(); c.arc(150, 108, 30, 0, 7); c.fill();
+  c.strokeStyle = '#6b5a3a'; c.lineWidth = 4; c.stroke();
+  c.lineWidth = 3; c.lineCap = 'round';
+  c.beginPath(); c.moveTo(150, 108); c.lineTo(150 + Math.cos(t * .4) * 22, 108 + Math.sin(t * .4) * 22);
+  c.moveTo(150, 108); c.lineTo(150 + Math.cos(t * .05) * 14, 108 + Math.sin(t * .05) * 14); c.stroke();
+  let i = 0;
+  for (let r = 0; r < 3; r++) for (let k = 0; k < 3; k++) win(c, b, i++, 32 + k * 90, 195 + r * 100, 50, 64, t);
+  win(c, b, i++, 32, 505, 50, 70, t); win(c, b, i++, 218, 505, 50, 70, t);
+  c.fillStyle = '#3a2b22'; rr(c, 117, 505, 66, 105, 28); c.fill();
+  c.fillStyle = '#2a1f19'; c.fillRect(149, 520, 2, 90);
+  c.fillStyle = '#c2b18a'; c.fillRect(100, 610, 100, 10);
+}
+function drawKrye(c, b, t) {
+  c.fillStyle = '#e8e2d2'; c.fillRect(0, 150, 320, 350);
+  c.fillStyle = '#d8d0bb'; poly(c, [[-6, 150], [326, 150], [160, 52]]); c.fill();
+  c.fillStyle = '#c9c0a8'; poly(c, [[34, 142], [286, 142], [160, 78]]); c.fill();
+  c.fillStyle = '#a89c80'; c.beginPath(); c.arc(160, 120, 13, 0, 7); c.fill();
+  c.fillStyle = '#cbc3ae'; c.fillRect(-6, 150, 332, 18);
+  for (let i = 0; i < 6; i++) {
+    const x = 24 + i * 55;
+    c.fillStyle = '#f6f2e6'; c.fillRect(x, 168, 24, 262);
+    c.fillStyle = 'rgba(0,0,0,.12)'; c.fillRect(x + 17, 168, 7, 262);
+    c.fillStyle = '#d9d2c0'; c.fillRect(x - 3, 168, 30, 8); c.fillRect(x - 3, 422, 30, 8);
+  }
+  let n = 0;
+  for (let i = 0; i < 5; i++) {
+    const x = 53 + i * 55;
+    win(c, b, n++, x, 210, 20, 62, t);
+    if (i !== 2) win(c, b, n++, x, 300, 20, 62, t);
+  }
+  c.fillStyle = '#3a2b22'; rr(c, 164, 345, 22, 85, 6); c.fill();
+  c.fillStyle = '#c9c0a8'; c.fillRect(-6, 430, 332, 70);
+  c.strokeStyle = 'rgba(0,0,0,.18)'; c.lineWidth = 2;
+  for (let y = 445; y < 500; y += 16) { c.beginPath(); c.moveTo(-6, y); c.lineTo(326, y); c.stroke(); }
+}
+function postKrye(c, b, t) { // flamuri (jashtë siluetës, nuk lyhet)
+  c.strokeStyle = '#555'; c.lineWidth = 3; c.beginPath(); c.moveTo(160, 52); c.lineTo(160, 4); c.stroke();
+  const fw = 64, fh = 40, x0 = 162, y0 = 6;
+  c.fillStyle = '#d3122a'; c.beginPath(); c.moveTo(x0, y0);
+  for (let i = 0; i <= 8; i++) c.lineTo(x0 + (fw * i) / 8, y0 + Math.sin(t * 5 + i * .8) * 2.5);
+  for (let i = 8; i >= 0; i--) c.lineTo(x0 + (fw * i) / 8, y0 + fh + Math.sin(t * 5 + i * .8) * 2.5);
+  c.closePath(); c.fill();
+  c.fillStyle = '#111'; const cx = x0 + fw / 2, cy = y0 + fh / 2 + Math.sin(t * 5 + 3) * 1.5;
+  c.beginPath(); c.ellipse(cx, cy + 3, 5, 9, 0, 0, 7); c.fill();
+  c.beginPath(); c.arc(cx - 6, cy - 8, 3.4, 0, 7); c.arc(cx + 6, cy - 8, 3.4, 0, 7); c.fill();
+  poly(c, [[cx - 4, cy - 2], [cx - 22, cy - 6], [cx - 14, cy + 10]]); c.fill();
+  poly(c, [[cx + 4, cy - 2], [cx + 22, cy - 6], [cx + 14, cy + 10]]); c.fill();
+}
+function drawArsimi(c, b, t) {
+  c.fillStyle = '#5f7f99'; c.fillRect(0, 90, 300, 470);
+  c.fillStyle = '#4e6d86'; c.fillRect(40, 30, 220, 70);
+  c.fillStyle = '#fff'; poly(c, [[150, 84], [104, 76], [104, 46], [150, 54]]); c.fill();
+  poly(c, [[150, 84], [196, 76], [196, 46], [150, 54]]); c.fill();
+  c.strokeStyle = '#4e6d86'; c.lineWidth = 3; c.beginPath(); c.moveTo(150, 54); c.lineTo(150, 84); c.stroke();
+  c.strokeStyle = 'rgba(78,109,134,.6)'; c.lineWidth = 2;
+  for (let k = 0; k < 3; k++) { c.beginPath(); c.moveTo(112, 54 + k * 7); c.lineTo(144, 60 + k * 7); c.moveTo(188, 54 + k * 7); c.lineTo(156, 60 + k * 7); c.stroke(); }
+  let i = 0;
+  for (let r = 0; r < 6; r++) for (let k = 0; k < 4; k++) win(c, b, i++, 20 + k * 68, 118 + r * 66, 50, 46, t);
+  c.fillStyle = '#3d556a'; c.fillRect(60, 498, 180, 14);
+  c.fillStyle = '#9fd6ee'; c.fillRect(92, 516, 116, 44);
+  c.fillStyle = '#3d556a'; c.fillRect(148, 516, 4, 44);
+}
+
+const BUILD = [
+  { id: 'bashkia', label: 'BASHKIA', x: 30, y: 520, w: 300, h: 640, hit: { x: 20, y: 190, w: 260, h: 400 }, draw: drawBashkia,
+    sil: mkSil(p => { p.rect(0, 160, 300, 480); p.rect(105, 60, 90, 100); p.moveTo(93, 62); p.lineTo(207, 62); p.lineTo(150, 0); p.closePath(); }) },
+  { id: 'kryeministria', label: 'KRYEMINISTRIA', x: 380, y: 660, w: 320, h: 500, hit: { x: 20, y: 170, w: 280, h: 310 }, draw: drawKrye, post: postKrye,
+    sil: mkSil(p => { p.rect(0, 150, 320, 350); p.moveTo(0, 150); p.lineTo(320, 150); p.lineTo(160, 52); p.closePath(); }) },
+  { id: 'arsimi', label: 'MINISTRIA E ARSIMIT', x: 750, y: 600, w: 300, h: 560, hit: { x: 15, y: 105, w: 270, h: 430 }, draw: drawArsimi,
+    sil: mkSil(p => { p.rect(0, 90, 300, 470); p.rect(40, 30, 220, 70); }) },
+];
+for (const b of BUILD) {
+  b.splat = document.createElement('canvas'); b.splat.width = b.w; b.splat.height = b.h; b.sx = b.splat.getContext('2d');
+  Object.assign(b, { heat: 0, fires: [], shake: 0, splatAlpha: 1, cleaning: 0, rounds: 0 });
+}
+const bById = id => BUILD.find(b => b.id === id);
+
+/* ------------------------------ efekte mbi godinat ------------------------------ */
+function splat(c, x, y, r, col) {
+  c.fillStyle = col;
+  c.beginPath();
+  const n = 26, ph = rnd(0, 7);
+  for (let i = 0; i <= n; i++) {
+    const a = (i / n) * Math.PI * 2, rad = r * (.72 + .28 * Math.sin(a * 5 + ph) * Math.cos(a * 3 + ph) + rnd(0, .12));
+    const px = x + Math.cos(a) * rad, py = y + Math.sin(a) * rad;
+    i ? c.lineTo(px, py) : c.moveTo(px, py);
+  }
+  c.closePath(); c.fill();
+  for (let i = 0; i < rint(6, 10); i++) {
+    const a = rnd(0, 7), d = r * rnd(1.15, 2.1);
+    c.beginPath(); c.arc(x + Math.cos(a) * d, y + Math.sin(a) * d, r * rnd(.07, .2), 0, 7); c.fill();
+  }
+  for (let i = 0; i < rint(2, 4); i++) {
+    const dx = rnd(-r * .6, r * .6), len = rnd(r * .8, r * 2.3), w = r * rnd(.1, .17);
+    rr(c, x + dx - w / 2, y, w, len, w / 2); c.fill();
+    c.beginPath(); c.arc(x + dx, y + len, w * .85, 0, 7); c.fill();
+  }
+  c.fillStyle = 'rgba(255,255,255,.28)'; c.beginPath(); c.ellipse(x - r * .25, y - r * .3, r * .25, r * .14, -.6, 0, 7); c.fill();
+}
+function crack(c, x, y) {
+  c.save(); c.strokeStyle = 'rgba(15,12,22,.9)'; c.lineCap = 'round'; c.lineJoin = 'round';
+  c.fillStyle = 'rgba(40,36,52,.8)'; c.beginPath(); c.arc(x, y, rnd(7, 10), 0, 7); c.fill();
+  const rays = rint(6, 9);
+  for (let i = 0; i < rays; i++) {
+    let a = (i / rays) * 6.283 + rnd(-.25, .25), px = x, py = y; const len = rnd(40, 90); c.lineWidth = rnd(1.8, 3.4);
+    c.beginPath(); c.moveTo(px, py);
+    for (let d = 0; d < len; d += rnd(9, 15)) { a += rnd(-.45, .45); px += Math.cos(a) * 12; py += Math.sin(a) * 12; c.lineTo(px, py); }
+    c.stroke();
+  }
+  c.restore();
+}
+function soot(c, x, y) {
+  const g = c.createRadialGradient(x, y, 4, x, y, 80);
+  g.addColorStop(0, 'rgba(8,6,10,.92)'); g.addColorStop(.6, 'rgba(8,6,10,.55)'); g.addColorStop(1, 'rgba(8,6,10,0)');
+  c.fillStyle = g; c.beginPath(); c.arc(x, y, 80, 0, 7); c.fill();
+}
+function addHeat(b, v) {
+  if (b.cleaning > 0) return;
+  b.heat = Math.min(100, b.heat + v);
+  if (b.heat >= 100) {
+    b.cleaning = 2.4; b.rounds++;
+    pushBanner('win', 'ZEMËRIMI 100%', `${b.label} u mbulua me ngjyra!`);
+    for (let i = 0; i < 5; i++) later(i * .15, () => confetti(b.x + b.w / 2 + rnd(-90, 90), b.y + rnd(0, 120), 22));
+    sfx.win();
+  }
+}
+
+/* ------------------------------ grimca & tekste ------------------------------ */
+function P(o) { S.parts.push(Object.assign({ vx: 0, vy: 0, g: 0, life: 1, max: 1, size: 4, col: '#fff', type: 'dot', rot: 0, vr: 0, grow: 0 }, o, { max: o.life })); }
+function burst(x, y, n, col, speed, o = {}) {
+  for (let i = 0; i < n; i++) {
+    const a = rnd(0, 6.283), s = rnd(.25, 1) * speed;
+    P({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - (o.up || 0), g: o.g ?? 700, life: rnd(.4, .9), size: rnd(3, o.size || 8), col: Array.isArray(col) ? pick(col) : col, type: o.type || 'dot' });
+  }
+}
+function confetti(x, y, n) {
+  for (let i = 0; i < n; i++) P({ x, y, vx: rnd(-260, 260), vy: rnd(-420, -120), g: 520, life: rnd(1.4, 2.4), size: rnd(6, 11), col: pick(INK), type: 'confetti', rot: rnd(0, 6), vr: rnd(-9, 9) });
+}
+function firework(x, y) {
+  const col = pick(INK);
+  for (let i = 0; i < 46; i++) { const a = (i / 46) * 6.283, s = rnd(180, 330); P({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, g: 220, life: rnd(.9, 1.5), size: rnd(3, 5), col, type: 'spark' }); }
+  S.flash = Math.max(S.flash, .12); S.flashCol = col;
+}
+function floatText(x, y, text, col) { S.floats.push({ x, y, text, col, t: 0, life: 1 }); }
+
+/* ------------------------------ protestuesit ------------------------------ */
+function scaleAt(y) { return .78 + clamp((y - CFG.laneTop) / (CFG.laneBottom - CFG.laneTop), 0, 1) * .42; }
+function freeSpot() {
+  let best = null, bd = -1;
+  for (let i = 0; i < 16; i++) {
+    const x = rnd(70, W - 70), y = rnd(CFG.laneTop, CFG.laneBottom);
+    let d = 1e9; for (const o of S.crowd) d = Math.min(d, Math.hypot(o.tx - x, (o.ty - y) * 1.7));
+    if (d > bd) { bd = d; best = { x, y }; }
+  }
+  return best;
+}
+function removePerson(p) { p.leaving = true; p.walking = true; p.tx = p.x < W / 2 ? -90 : W + 90; if (S.byName.get(p.name) === p) S.byName.delete(p.name); }
+function addPerson(name, ambient = false) {
+  if (!ambient && S.byName.has(name)) { const p = S.byName.get(name); p.hype = 1; return p; }
+  if (S.crowd.filter(p => !p.leaving).length >= CFG.maxCrowd) {
+    const live = S.crowd.filter(p => !p.leaving);
+    const victim = live.find(p => p.ambient) || live.reduce((a, b) => (a.score < b.score || (a.score === b.score && a.born < b.born)) ? a : b);
+    removePerson(victim);
+  }
+  const spot = freeSpot(), side = Math.random() < .5 ? -1 : 1;
+  const p = {
+    name, ambient, x: side < 0 ? -70 : W + 70, y: spot.y + rnd(-6, 6), tx: spot.x, ty: spot.y, walking: true, leaving: false,
+    color: pick(JACKETS), skin: pick(SKINS), hair: pick(HAIR), hairStyle: rint(0, 2), bob: rnd(0, 7),
+    sign: Math.random() < .5 ? pick(SLOGANS) : null, throwT: 0, hype: 1, jump: 0, say: '', sayT: 0, score: 0, born: S.t,
+    mouthT: rnd(0, 2), nextIdle: S.t + rnd(3, 8),
+  };
+  S.crowd.push(p); if (!ambient) S.byName.set(name, p);
+  return p;
+}
+const getPerson = name => S.byName.get(name) || addPerson(name);
+
+function drawPerson(p, t) {
+  const s = scaleAt(p.y) * (p.ambient ? .94 : 1);
+  const walking = p.walking, ph = t * 11 + p.bob;
+  const bounce = walking ? -Math.abs(Math.sin(ph)) * 5 : -Math.abs(Math.sin(t * 6 + p.bob)) * 4 * p.hype;
+  const jump = p.jump > 0 ? -Math.sin((1 - p.jump) * Math.PI) * 38 : 0;
+  ctx.save(); ctx.translate(p.x, p.y); ctx.scale(s, s);
+  ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.ellipse(0, 2, 22, 7, 0, 0, 7); ctx.fill();
+  ctx.translate(0, bounce + jump);
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  // këmbët
+  ctx.strokeStyle = '#23233f'; ctx.lineWidth = 10;
+  const sw = walking ? Math.sin(ph) * 11 : 0;
+  ctx.beginPath(); ctx.moveTo(-8, -24); ctx.lineTo(-8 + sw, 0); ctx.moveTo(8, -24); ctx.lineTo(8 - sw, 0); ctx.stroke();
+  // krahu i majtë
+  const throwing = p.throwT > 0;
+  ctx.strokeStyle = p.color; ctx.lineWidth = 9;
+  ctx.beginPath(); ctx.moveTo(-17, -58); ctx.lineTo(-25 + (walking ? Math.sin(ph) * 6 : Math.sin(t * 6 + p.bob) * 4), p.sign || p.hype > .3 ? -88 : -34); ctx.stroke();
+  // trupi
+  ctx.fillStyle = p.color; rr(ctx, -18, -68, 36, 48, 13); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.18)'; rr(ctx, -18, -68, 36, 12, 8); ctx.fill();
+  // krahu i djathtë
+  ctx.strokeStyle = p.color; ctx.lineWidth = 9;
+  let hx, hy;
+  if (throwing) { const k = 1 - p.throwT / .35, a = -2.5 + k * 3.1; hx = 17 + Math.cos(a) * 27; hy = -58 + Math.sin(a) * 27; }
+  else if (p.sign) { hx = 24; hy = -96; }
+  else { hx = 25; hy = walking ? -34 + Math.sin(ph + 3) * 6 : -90 + Math.sin(t * 7 + p.bob) * 6 * p.hype; }
+  ctx.beginPath(); ctx.moveTo(17, -58); ctx.lineTo(hx, hy); ctx.stroke();
+  ctx.fillStyle = p.skin; ctx.beginPath(); ctx.arc(hx, hy, 5.5, 0, 7); ctx.fill();
+  // koka
+  ctx.fillStyle = p.skin; ctx.beginPath(); ctx.arc(0, -84, 17, 0, 7); ctx.fill();
+  ctx.fillStyle = p.hair;
+  ctx.beginPath(); ctx.arc(0, -86, 17.5, Math.PI * 1.02, Math.PI * 1.98); ctx.closePath(); ctx.fill();
+  if (p.hairStyle === 1) { ctx.fillRect(-18, -90, 6, 16); ctx.fillRect(12, -90, 6, 16); }
+  if (p.hairStyle === 2) { ctx.beginPath(); ctx.arc(0, -103, 7, 0, 7); ctx.fill(); }
+  ctx.fillStyle = '#1a1a24'; ctx.beginPath(); ctx.arc(-6, -83, 2.4, 0, 7); ctx.arc(6, -83, 2.4, 0, 7); ctx.fill();
+  ctx.strokeStyle = '#1a1a24'; ctx.lineWidth = 2.4; ctx.beginPath();
+  ctx.moveTo(-10, -91); ctx.lineTo(-3, -88); ctx.moveTo(10, -91); ctx.lineTo(3, -88); ctx.stroke();
+  const chant = !walking && Math.sin(t * 5 + p.mouthT * 3) > .1;
+  ctx.fillStyle = '#5a1620';
+  if (chant || throwing) { ctx.beginPath(); ctx.ellipse(0, -75, 5, 4.5, 0, 0, 7); ctx.fill(); }
+  else { ctx.strokeStyle = '#5a1620'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-4, -75); ctx.lineTo(4, -75); ctx.stroke(); }
+  // pllakati
+  let top = -112;
+  if (p.sign && !throwing) {
+    ctx.save(); ctx.translate(24, -96); ctx.rotate(Math.sin(t * 3 + p.bob) * .12 - .05);
+    ctx.strokeStyle = '#6b4a2b'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(0, 6); ctx.lineTo(0, -30); ctx.stroke();
+    ctx.fillStyle = '#fffbe8'; rr(ctx, -52, -76, 104, 46, 6); ctx.fill();
+    ctx.strokeStyle = '#222'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.fillStyle = '#c1121f'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; fitText(ctx, p.sign, 92, 22, '900'); ctx.fillText(p.sign, 0, -53);
+    ctx.restore(); top = -172;
+  }
+  if (!p.ambient) {
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    const nm = p.name.length > 14 ? p.name.slice(0, 13) + '…' : p.name;
+    fitText(ctx, nm, 130, 22, '800'); outlined(ctx, nm, 0, top, '#fff', 'rgba(0,0,0,.9)', 5);
+  }
+  if (p.sayT > 0) {
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; fitText(ctx, p.say, 200, 20, '700');
+    const w = ctx.measureText(p.say).width + 22, y = top - 30;
+    ctx.globalAlpha = clamp(p.sayT * 2, 0, 1);
+    ctx.fillStyle = '#fff'; rr(ctx, -w / 2, y - 16, w, 32, 14); ctx.fill();
+    poly(ctx, [[-6, y + 15], [6, y + 15], [0, y + 24]]); ctx.fill();
+    ctx.fillStyle = '#111'; ctx.fillText(p.say, 0, y + 1); ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+}
+
+/* ------------------------------ gjuajtjet ------------------------------ */
+function chooseTarget(user) { return (user && bById(S.prefs[user])) || pick(BUILD); }
+function launch(p, type, b, o = {}) {
+  if (S.proj.length > 140) return;
+  const sc = scaleAt(p.y), x0 = p.x + 22 * sc, y0 = p.y - 88 * sc;
+  const hp = b.hit, x1 = b.x + rnd(hp.x, hp.x + hp.w), y1 = b.y + rnd(hp.y, hp.y + hp.h);
+  const dist = Math.hypot(x1 - x0, y1 - y0);
+  S.proj.push({ type, x: x0, y: y0, x0, y0, x1, y1, t: 0, dur: clamp(dist / 850, .65, 1.3), arc: rnd(170, 300), rot: rnd(0, 6), vr: rnd(-9, 9), col: pick(INK), b, small: !!o.small, user: p.name });
+  p.throwT = .35; p.hype = 1; p.nextIdle = S.t + rnd(3, 8);
+  sfx.whoosh();
+}
+function impact(q) {
+  const b = q.b, lx = q.x1 - b.x, ly = q.y1 - b.y, c = b.sx;
+  S.hits++;
+  switch (q.type) {
+    case 'paint':
+      splat(c, lx, ly, q.small ? rnd(18, 28) : rnd(36, 52), q.col); addHeat(b, q.small ? .6 : 1.6);
+      burst(q.x1, q.y1, q.small ? 6 : 12, q.col, 260, { g: 900 }); floatText(q.x1, q.y1 - 20, 'SPLAT!', q.col); sfx.splat(); break;
+    case 'bomb':
+      splat(c, lx, ly, rnd(70, 92), q.col); splat(c, lx + rnd(-50, 50), ly + rnd(-40, 40), rnd(34, 50), pick(INK)); splat(c, lx + rnd(-60, 60), ly + rnd(-50, 50), rnd(30, 44), pick(INK));
+      addHeat(b, 5); burst(q.x1, q.y1, 28, INK, 420, { g: 900, size: 9 }); floatText(q.x1, q.y1 - 30, 'SPLAT!!', q.col); b.shake = .3; sfx.splat(); break;
+    case 'stone':
+      crack(c, lx, ly); addHeat(b, 7); burst(q.x1, q.y1, 22, ['#8a8a96', '#b8b8c4', '#5f5f6c'], 380, { g: 1100, size: 7 });
+      floatText(q.x1, q.y1 - 20, 'KRAK!', '#e5e5f0'); b.shake = .45; S.shake = Math.max(S.shake, .25); sfx.crack(); break;
+    case 'molotov':
+      soot(c, lx, ly); addHeat(b, 12); b.fires.push({ x: lx, y: ly, t: 0, dur: rnd(2.6, 3.6) });
+      burst(q.x1, q.y1, 26, ['#ffd23f', '#ff8a00', '#ff3d00'], 460, { g: 300, size: 8, up: 120, type: 'spark' });
+      floatText(q.x1, q.y1 - 30, 'BUM!', '#ffb703'); b.shake = .6; S.shake = Math.max(S.shake, .5); S.flash = .35; S.flashCol = '#ff8a00'; sfx.boom(); break;
+  }
+}
+function finale(user) {
+  pushBanner('gift', `🎆 FINALE nga @${user}`, 'Të gjithë gjuajnë bojë!');
+  const people = S.crowd.filter(p => !p.leaving);
+  BUILD.forEach((b, bi) => {
+    for (let i = 0; i < 7; i++) later(bi * .25 + i * .22, () => { const p = pick(people); if (p) launch(p, 'bomb', b); });
+  });
+  for (let i = 0; i < 6; i++) later(i * .35, () => firework(rnd(120, 960), rnd(380, 720)));
+  for (let i = 0; i < 4; i++) later(i * .4, () => confetti(rnd(100, 980), 330, 26));
+  S.shake = Math.max(S.shake, .5); sfx.boom();
+}
+
+/* ------------------------------ ngjarjet ------------------------------ */
+function pushBanner(kind, l1, l2) { S.queue.push({ kind, l1, l2 }); if (S.queue.length > 14) S.queue.splice(1, 1); }
+function onJoin(user) {
+  if (!user) return;
+  const isNew = !S.byName.has(user);
+  const p = addPerson(user); p.jump = 1;
+  if (isNew) S.joined++;
+  pushBanner('join', 'SAPO IU BASHKUA PROTESTËS:', '@' + user);
+  sfx.join();
+}
+function onGift(user, name, diamonds, count) {
+  count = Math.max(1, count | 0); diamonds = Math.max(1, diamonds | 0);
+  const tier = tierOf(diamonds), p = getPerson(user);
+  S.scores[user] = (S.scores[user] || 0) + diamonds * count; p.score = S.scores[user]; p.jump = 1;
+  if (tier.key === 'finale') return finale(user);
+  const b = chooseTarget(user), n = Math.min(count, 10);
+  pushBanner('gift', `${tier.icon} ${tier.label.toUpperCase()}${count > 1 ? ' ×' + count : ''}${name ? ' · ' + name : ''}`, `@${user} → ${b.label}`);
+  for (let i = 0; i < n; i++) later(i * .28, () => launch(p, tier.key, b));
+}
+function onLike(user, count) {
+  S.likeBudget = Math.min(S.likeBudget + Math.min(count || 1, 5), 10);
+  if (S.likeBudget < 1) return;
+  S.likeBudget -= 1;
+  const p = getPerson(user); if (S.proj.length < 60) launch(p, 'paint', chooseTarget(user), { small: true });
+}
+function onChat(user, text) {
+  const p = getPerson(user), low = (text || '').toLowerCase();
+  const hit = /bashki/.test(low) ? 'bashkia' : /kryemin/.test(low) ? 'kryeministria' : /arsim/.test(low) ? 'arsimi' : null;
+  if (hit) { S.prefs[user] = hit; p.say = '🎯 ' + bById(hit).label; } else p.say = (text || '').slice(0, 34);
+  p.sayT = 3.2;
+}
+function handle(m) {
+  switch (m.type) {
+    case 'join': return onJoin(m.user);
+    case 'gift': return onGift(m.user, m.gift, m.diamonds, m.count);
+    case 'like': return onLike(m.user, m.count);
+    case 'chat': return onChat(m.user, m.text);
+  }
+}
+window.__game = { handle, S }; // për teste / integrime të tjera
+
+/* ------------------------------ lidhja me TikTok (WebSocket) ------------------------------ */
+(function connect() {
+  if (Q.has('demo') || Q.get('ws') === 'off') return;
+  let ws;
+  try { ws = new WebSocket(CFG.wsUrl); } catch (e) { return setTimeout(connect, 3000); }
+  ws.onopen = () => { S.status = 'lidhur'; };
+  ws.onmessage = e => { try { handle(JSON.parse(e.data)); } catch (_) {} };
+  ws.onclose = () => { S.status = 'offline'; setTimeout(connect, 3000); };
+  ws.onerror = () => ws.close();
+})();
+
+/* ------------------------------ demo & tastiera ------------------------------ */
+const fake = () => pick(NAMES_DEMO) + (Math.random() < .5 ? '_' + rint(1, 99) : '');
+const GIFT_D = [1, 1, 1, 5, 10, 10, 30, 30, 100, 100, 500];
+if (Q.has('demo')) {
+  (function loop() {
+    const r = Math.random();
+    if (r < .42) handle({ type: 'join', user: fake() });
+    else if (r < .75) handle({ type: 'gift', user: S.crowd.length && Math.random() < .6 ? pick(S.crowd.filter(p => !p.ambient).concat([{ name: fake() }])).name : fake(), gift: 'Dhuratë', diamonds: pick(GIFT_D), count: rint(1, 3) });
+    else if (r < .9) handle({ type: 'like', user: fake(), count: rint(1, 5) });
+    else handle({ type: 'chat', user: fake(), text: pick(['!bashkia', '!arsimi', '!kryeministria', 'MJAFT!', 'Ora ka ardhur', 'Së bashku!']) });
+    setTimeout(loop, rnd(350, 1500));
+  })();
+}
+addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if (k === 'j') handle({ type: 'join', user: fake() });
+  else if (k === 'l') handle({ type: 'like', user: fake(), count: 3 });
+  else if (k === 'm') sfx.toggle();
+  else if ('12345'.includes(k) && k) handle({ type: 'gift', user: fake(), gift: 'Test', diamonds: [1, 10, 30, 100, 500][+k - 1], count: 1 });
+});
+
+/* ------------------------------ përditësimi ------------------------------ */
+// protestues figurantë që mbajnë skenën gjallë
+for (let i = 0; i < CFG.ambient; i++) { const p = addPerson('', true); p.x = p.tx; p.y = p.ty; p.walking = false; }
+
+function update(dt) {
+  S.t += dt;
+  for (let i = S.timers.length - 1; i >= 0; i--) if (S.timers[i].at <= S.t) { const f = S.timers[i].fn; S.timers.splice(i, 1); f(); }
+  S.likeBudget = Math.min(10, S.likeBudget + dt * 6);
+  S.shake = Math.max(0, S.shake - dt); S.flash = Math.max(0, S.flash - dt * .9);
+
+  for (let i = S.crowd.length - 1; i >= 0; i--) {
+    const p = S.crowd[i];
+    p.throwT = Math.max(0, p.throwT - dt); p.hype = Math.max(.25, p.hype - dt * .5); p.sayT = Math.max(0, p.sayT - dt);
+    if (p.jump > 0) p.jump = Math.max(0, p.jump - dt * 1.6);
+    if (p.walking) {
+      const dx = p.tx - p.x, dy = p.ty - p.y, d = Math.hypot(dx, dy), step = 190 * dt;
+      if (d <= step) { p.x = p.tx; p.y = p.ty; p.walking = false; if (p.leaving) S.crowd.splice(i, 1); }
+      else { p.x += dx / d * step; p.y += dy / d * step; }
+    } else if (p.ambient && S.t > p.nextIdle && S.proj.length < 25) {
+      launch(p, 'paint', pick(BUILD), { small: Math.random() < .5 }); p.nextIdle = S.t + rnd(4, 10);
+    }
+  }
+  for (let i = S.proj.length - 1; i >= 0; i--) {
+    const q = S.proj[i]; q.t += dt / q.dur; q.rot += q.vr * dt;
+    const t = Math.min(q.t, 1);
+    q.x = lerp(q.x0, q.x1, t); q.y = lerp(q.y0, q.y1, t) - Math.sin(t * Math.PI) * q.arc;
+    if (q.type === 'molotov' && Math.random() < .8) P({ x: q.x, y: q.y, vx: rnd(-30, 30), vy: rnd(-60, 0), life: rnd(.25, .5), size: rnd(8, 15), col: '#ff8a00', type: 'fire' });
+    else if (Math.random() < .35) P({ x: q.x, y: q.y, vx: rnd(-20, 20), vy: rnd(-10, 30), g: 200, life: rnd(.25, .45), size: rnd(2, 4), col: q.type === 'stone' ? '#aaa' : q.col, type: 'dot' });
+    if (q.t >= 1) { S.proj.splice(i, 1); impact(q); }
+  }
+  for (const b of BUILD) {
+    b.shake = Math.max(0, b.shake - dt);
+    for (let i = b.fires.length - 1; i >= 0; i--) {
+      const f = b.fires[i]; f.t += dt;
+      if (f.t > f.dur) { b.fires.splice(i, 1); continue; }
+      const k = 1 - f.t / f.dur;
+      for (let j = 0; j < 3; j++) P({ x: b.x + f.x + rnd(-16, 16), y: b.y + f.y + rnd(-6, 12), vx: rnd(-18, 18), vy: rnd(-170, -70), life: rnd(.4, .85) * (.5 + k * .5), size: rnd(12, 26) * (.5 + k * .5), col: 'fire', type: 'fire' });
+      if (Math.random() < .35) P({ x: b.x + f.x + rnd(-14, 14), y: b.y + f.y - 8, vx: rnd(-14, 14), vy: rnd(-70, -35), life: rnd(.9, 1.6), size: rnd(10, 18), grow: 22, col: '#555', type: 'smoke' });
+    }
+    if (b.cleaning > 0) {
+      b.cleaning -= dt; b.splatAlpha = clamp(b.cleaning / 2.4, 0, 1);
+      if (b.cleaning <= 0) { b.sx.clearRect(0, 0, b.w, b.h); b.heat = 0; b.splatAlpha = 1; b.fires.length = 0; }
+    }
+  }
+  for (let i = S.parts.length - 1; i >= 0; i--) {
+    const p = S.parts[i]; p.life -= dt;
+    if (p.life <= 0) { S.parts.splice(i, 1); continue; }
+    p.vy += p.g * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.rot += p.vr * dt; p.size += p.grow * dt;
+  }
+  for (let i = S.floats.length - 1; i >= 0; i--) { const f = S.floats[i]; f.t += dt; if (f.t > .9) S.floats.splice(i, 1); }
+
+  // banderola
+  if (!S.banner && S.queue.length) {
+    const n = S.queue.length;
+    S.banner = Object.assign(S.queue.shift(), { t: 0, dur: n > 6 ? 1.1 : n > 3 ? 1.7 : n > 1 ? 2.3 : 3 });
+  }
+  if (S.banner) { S.banner.t += dt; if (S.banner.t > S.banner.dur) S.banner = null; }
+}
+
+/* ------------------------------ vizatimi ------------------------------ */
+function drawParts() {
+  for (const p of S.parts) {
+    const k = p.life / p.max;
+    if (p.type === 'fire' || p.type === 'spark') {
+      ctx.globalCompositeOperation = 'lighter';
+      const col = p.col === 'fire' ? `hsla(${8 + k * 45},100%,${45 + k * 20}%,${k * .9})` : p.col;
+      ctx.globalAlpha = p.col === 'fire' ? 1 : k; ctx.fillStyle = col;
+      ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(.5, p.size * (p.type === 'fire' ? (.4 + k * .6) : 1)), 0, 7); ctx.fill();
+      ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+    } else if (p.type === 'smoke') {
+      ctx.globalAlpha = k * .3; ctx.fillStyle = p.col; ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, 7); ctx.fill(); ctx.globalAlpha = 1;
+    } else if (p.type === 'confetti') {
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.globalAlpha = clamp(k * 2, 0, 1); ctx.fillStyle = p.col; ctx.fillRect(-p.size / 2, -p.size / 4, p.size, p.size / 2); ctx.restore(); ctx.globalAlpha = 1;
+    } else {
+      ctx.globalAlpha = clamp(k * 1.6, 0, 1); ctx.fillStyle = p.col; ctx.beginPath(); ctx.arc(p.x, p.y, p.size * (.5 + k * .5), 0, 7); ctx.fill(); ctx.globalAlpha = 1;
+    }
+  }
+}
+function drawProj(q) {
+  ctx.save(); ctx.translate(q.x, q.y); ctx.rotate(q.rot);
+  switch (q.type) {
+    case 'paint': { const r = q.small ? 9 : 15; ctx.fillStyle = q.col; ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.beginPath(); ctx.arc(-r * .3, -r * .3, r * .3, 0, 7); ctx.fill(); break; }
+    case 'bomb': ctx.fillStyle = q.col; ctx.beginPath(); ctx.arc(0, 0, 24, 0, 7); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.stroke();
+      ctx.fillStyle = '#222'; ctx.fillRect(-4, -34, 8, 12); ctx.fillStyle = '#ffd23f'; ctx.beginPath(); ctx.arc(0, -37, 5, 0, 7); ctx.fill(); break;
+    case 'stone': ctx.fillStyle = '#8b8b98'; poly(ctx, [[-16, -6], [-6, -16], [10, -13], [18, 0], [10, 14], [-8, 15], [-18, 6]]); ctx.fill();
+      ctx.strokeStyle = '#4a4a56'; ctx.lineWidth = 3; ctx.stroke(); ctx.fillStyle = 'rgba(255,255,255,.2)'; poly(ctx, [[-10, -8], [2, -11], [0, -2]]); ctx.fill(); break;
+    case 'molotov':
+      ctx.fillStyle = '#2e8b57'; rr(ctx, -10, -8, 20, 28, 8); ctx.fill(); ctx.fillRect(-4, -22, 8, 16);
+      ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.fillRect(-6, -2, 3, 16);
+      ctx.fillStyle = '#e8d9a8'; ctx.fillRect(-3, -28, 6, 8); break;
+  }
+  ctx.restore();
+}
+function drawLabels() {
+  for (const b of BUILD) {
+    const cx = b.x + b.w / 2, y = b.y - 62;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    fitText(ctx, b.label, 290, 30, '900'); const tw = ctx.measureText(b.label).width + 36;
+    ctx.fillStyle = 'rgba(8,10,28,.82)'; rr(ctx, cx - tw / 2, y - 34, tw, 44, 12); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.25)'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.fillText(b.label, cx, y);
+    const bw = 230, bx = cx - bw / 2, by = y + 18;
+    ctx.fillStyle = 'rgba(8,10,28,.8)'; rr(ctx, bx - 3, by - 3, bw + 6, 22, 11); ctx.fill();
+    const g = ctx.createLinearGradient(bx, 0, bx + bw, 0); g.addColorStop(0, '#2ecc71'); g.addColorStop(.55, '#f1c40f'); g.addColorStop(1, '#e63946');
+    ctx.fillStyle = g; rr(ctx, bx, by, Math.max(14, bw * b.heat / 100), 16, 8); ctx.fill();
+    ctx.font = '800 13px "Segoe UI",Arial,sans-serif'; ctx.fillStyle = '#fff'; ctx.textBaseline = 'middle';
+    ctx.fillText(`ZEMËRIMI ${Math.floor(b.heat)}%`, cx, by + 8);
+  }
+}
+function drawBanner() {
+  const bn = S.banner; if (!bn) return;
+  const a = .3, t = bn.t, out = bn.dur - a;
+  let k = t < a ? 1 - Math.pow(1 - t / a, 3) : t > out ? 1 - (t - out) / a : 1;
+  k = clamp(k, 0, 1);
+  const w = 940, h = 96, x = (W - w) / 2 + (1 - k) * -W * .6, y = 300;
+  const acc = bn.kind === 'join' ? '#2ecc71' : bn.kind === 'gift' ? '#ff9f1c' : '#b84dff';
+  ctx.save(); ctx.globalAlpha = k;
+  ctx.shadowColor = acc; ctx.shadowBlur = 24;
+  ctx.fillStyle = 'rgba(8,10,28,.88)'; rr(ctx, x, y, w, h, 22); ctx.fill(); ctx.shadowBlur = 0;
+  ctx.strokeStyle = acc; ctx.lineWidth = 3; ctx.stroke();
+  ctx.fillStyle = acc; rr(ctx, x, y, 14, h, 7); ctx.fill();
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  fitText(ctx, bn.l1, w - 70, 26, '800'); ctx.fillStyle = acc; ctx.fillText(bn.l1, x + 38, y + 36);
+  fitText(ctx, bn.l2, w - 70, 42, '900'); ctx.fillStyle = '#fff'; ctx.fillText(bn.l2, x + 38, y + 80);
+  ctx.restore();
+}
+function drawHUD(t) {
+  // titulli
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.font = '900 92px Impact, "Arial Black", "Segoe UI", sans-serif';
+  ctx.save(); ctx.shadowColor = 'rgba(255,40,80,.8)'; ctx.shadowBlur = 28;
+  const g = ctx.createLinearGradient(0, 120, 0, 210); g.addColorStop(0, '#fff'); g.addColorStop(1, '#ffb3c1');
+  outlined(ctx, 'PROTESTA LIVE', W / 2, 205, g, '#7a0c24', 10); ctx.restore();
+  // ● LIVE
+  const pulse = .6 + .4 * Math.sin(t * 4);
+  ctx.fillStyle = '#e11d48'; rr(ctx, 60, 130, 118, 44, 12); ctx.fill();
+  ctx.fillStyle = `rgba(255,255,255,${pulse})`; ctx.beginPath(); ctx.arc(86, 152, 8, 0, 7); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.font = '900 24px "Segoe UI",Arial,sans-serif'; ctx.textAlign = 'left'; ctx.fillText('LIVE', 106, 161);
+  // disclaimer
+  ctx.textAlign = 'center';
+  const dt = '🎮  KJO ËSHTË VETËM NJË LOJË · ANIMACION SATIRIK · PA DHUNË REALE';
+  fitText(ctx, dt, 960, 25, '900'); const dw = Math.min(1000, ctx.measureText(dt).width + 50);
+  ctx.fillStyle = '#ffd60a'; rr(ctx, (W - dw) / 2, 232, dw, 52, 14); ctx.fill();
+  ctx.strokeStyle = '#111'; ctx.lineWidth = 3; ctx.stroke();
+  ctx.fillStyle = '#111'; ctx.textBaseline = 'middle'; ctx.fillText(dt, W / 2, 259);
+  drawLabels();
+  drawBanner();
+  // statistika + renditja
+  const real = S.crowd.filter(p => !p.ambient && !p.leaving).length;
+  const top = Object.entries(S.scores).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  ctx.fillStyle = 'rgba(8,10,28,.78)'; rr(ctx, 40, 1590, W - 80, 84, 18); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,.2)'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.textBaseline = 'middle'; ctx.font = '800 25px "Segoe UI",Arial,sans-serif'; ctx.fillStyle = '#fff';
+  ctx.fillText(`👥 ${real} protestues   ·   🎯 ${S.hits} goditje   ·   ✊ ${S.joined} të bashkuar`, W / 2, 1615);
+  const medals = ['🥇', '🥈', '🥉'];
+  const topTxt = top.length ? top.map(([n, s], i) => `${medals[i]} @${n.length > 12 ? n.slice(0, 11) + '…' : n} ${s}`).join('   ') : '🏆 Dërgo një dhuratë për të hyrë në renditje!';
+  fitText(ctx, topTxt, W - 130, 24, '700'); ctx.fillStyle = '#ffd60a'; ctx.fillText(topTxt, W / 2, 1651);
+  // legjenda
+  const lw = (W - 80) / TIERS.length;
+  TIERS.forEach((tr, i) => {
+    const x = 40 + i * lw;
+    ctx.fillStyle = 'rgba(8,10,28,.78)'; rr(ctx, x + 3, 1690, lw - 6, 66, 14); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.font = '700 26px "Segoe UI",Arial,sans-serif'; ctx.fillText(tr.icon, x + lw / 2, 1712);
+    fitText(ctx, tr.label, lw - 14, 17, '800'); ctx.fillStyle = '#fff'; ctx.fillText(tr.label, x + lw / 2, 1735);
+    ctx.font = '700 13px "Segoe UI",Arial,sans-serif'; ctx.fillStyle = '#ffd60a'; ctx.fillText(`💎 ${tr.min}+`, x + lw / 2, 1750);
+  });
+  ctx.font = '700 22px "Segoe UI",Arial,sans-serif'; ctx.fillStyle = 'rgba(255,255,255,.9)';
+  outlined(ctx, 'Shkruaj në chat:  !bashkia   !kryeministria   !arsimi   për të zgjedhur objektivin', W / 2, 1782, '#fff', 'rgba(0,0,0,.8)', 4);
+  if (Q.has('debug')) { ctx.textAlign = 'left'; ctx.font = '16px monospace'; ctx.fillStyle = '#0f0'; ctx.fillText('ws: ' + S.status, 12, 1900); }
+}
+function render() {
+  const t = S.t;
+  ctx.drawImage(bg, 0, 0);
+  ctx.save();
+  if (S.shake > 0) ctx.translate(rnd(-1, 1) * S.shake * 14, rnd(-1, 1) * S.shake * 14);
+  for (const b of BUILD) {
+    ctx.save(); ctx.translate(b.x + (b.shake > 0 ? rnd(-1, 1) * b.shake * 7 : 0), b.y);
+    b.draw(ctx, b, t);
+    if (b.splatAlpha > 0) { ctx.save(); ctx.clip(b.sil); ctx.globalAlpha = b.splatAlpha; ctx.drawImage(b.splat, 0, 0); ctx.restore(); }
+    if (b.post) b.post(ctx, b, t);
+    ctx.restore();
+  }
+  const sorted = S.crowd.slice().sort((a, b) => a.y - b.y);
+  for (const p of sorted) drawPerson(p, t);
+  for (const q of S.proj) drawProj(q);
+  drawParts();
+  for (const f of S.floats) {
+    const k = f.t / .9, s = 1 + Math.sin(Math.min(k * 3, 1) * Math.PI) * .3;
+    ctx.save(); ctx.translate(f.x, f.y - k * 60); ctx.scale(s, s); ctx.globalAlpha = 1 - k * k; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = '900 38px Impact,"Arial Black",sans-serif'; outlined(ctx, f.text, 0, 0, f.col, '#000', 7); ctx.restore();
+  }
+  ctx.restore();
+  if (S.flash > 0) { ctx.globalAlpha = Math.min(.35, S.flash) ; ctx.fillStyle = S.flashCol; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
+  ctx.drawImage(vig, 0, 0);
+  drawHUD(t);
+}
+
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  update(dt); render(); requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

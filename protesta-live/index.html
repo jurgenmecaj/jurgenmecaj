@@ -31,7 +31,8 @@ const CFG = {
   wsUrl: Q.get('ws') || 'ws://localhost:8765',
   maxCrowd: 70,
   ambient: 10,                 // protestues "figurantë" kur nuk ka njeri
-  laneTop: 1290, laneBottom: 1560,
+  laneTop: 1290, laneBottom: 1535,
+  police: Q.has('police') ? +Q.get('police') : 100, // sekonda mes ardhjeve të policisë (0 = pa polici)
 };
 
 // Nivelet e dhuratave sipas diamanteve për një dhuratë
@@ -109,6 +110,8 @@ const sfx = (() => {
     splat: gate('sp', 50, () => { noise(.16, .10, 1000); tone(220, 70, .14, .07); }),
     crack: gate('cr', 60, () => { noise(.14, .16, 3500); tone(130, 50, .2, .10, 'square'); }),
     boom: gate('bm', 150, () => { noise(.7, .2, 600); tone(100, 30, .55, .18, 'sawtooth'); }),
+    siren: gate('sr', 300, () => { tone(650, 900, .35, .05, 'sawtooth'); tone(900, 650, .35, .05, 'sawtooth', .35); }),
+    hiss: gate('hs', 120, () => noise(.5, .09, 2600)),
     win: gate('wn', 500, () => { [523, 659, 784, 1046].forEach((f, i) => tone(f, f * 1.01, .25, .07, 'triangle', i * .09)); }),
   };
 })();
@@ -119,8 +122,10 @@ const S = {
   t: 0, crowd: [], byName: new Map(), proj: [], parts: [], floats: [], timers: [],
   queue: [], banner: null, scores: {}, prefs: {}, hits: 0, joined: 0,
   shake: 0, flash: 0, flashCol: '#ff8a00', status: 'offline', likeBudget: 0,
+  cops: [], gas: [], detained: [], raid: null, nextRaid: 0, likeCnt: 0,
   combo: 0, comboT: 0, comboPop: 0, topName: '', nextChant: 18, chant: null,
 };
+S.nextRaid = Math.min(50, CFG.police * .6);
 const later = (sec, fn) => S.timers.push({ at: S.t + sec, fn });
 
 /* ------------------------------ sfondi (statik) ------------------------------ */
@@ -373,6 +378,7 @@ function freeSpot() {
 function removePerson(p) { p.leaving = true; p.walking = true; p.tx = p.x < W / 2 ? -90 : W + 90; if (S.byName.get(p.name) === p) S.byName.delete(p.name); }
 function addPerson(name, ambient = false) {
   if (!ambient && S.byName.has(name)) { const p = S.byName.get(name); p.hype = 1; return p; }
+  if (!ambient) S.detained = S.detained.filter(d => d.name !== name);
   if (S.crowd.filter(p => !p.leaving).length >= CFG.maxCrowd) {
     const live = S.crowd.filter(p => !p.leaving);
     const victim = live.find(p => p.ambient) || live.reduce((a, b) => (a.score < b.score || (a.score === b.score && a.born < b.born)) ? a : b);
@@ -407,7 +413,7 @@ function limb(c, x0, y0, x1, y1, w, col) {
   c.strokeStyle = col; c.lineWidth = w; c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke();
 }
 function drawPerson(p, t) {
-  const s = scaleAt(p.y) * (p.ambient ? .8 : .94);
+  const s = scaleAt(p.y) * (p.cop ? 1.02 : p.ambient ? .8 : .94);
   const walking = p.walking, ph = t * 11 + p.bob;
   const bounce = walking ? -Math.abs(Math.sin(ph)) * 5 : -Math.abs(Math.sin(t * 6 + p.bob)) * 4 * p.hype;
   const jump = p.jump > 0 ? -Math.sin((1 - p.jump) * Math.PI) * 42 : 0;
@@ -443,7 +449,7 @@ function drawPerson(p, t) {
   // koka: FOTOJA e shikuesit ose fytyrë e vizatuar
   const HY = -102, HR = 27;
   ctx.fillStyle = p.skin; rr(ctx, -6, -80, 12, 12, 4); ctx.fill(); // qafa
-  if (avReady(p.img)) {
+  if (!p.cop && avReady(p.img)) {
     ctx.save(); ctx.beginPath(); ctx.arc(0, HY, HR, 0, 7); ctx.clip();
     ctx.drawImage(p.img, -HR, HY - HR, HR * 2, HR * 2); ctx.restore();
     ctx.lineWidth = 5; ctx.strokeStyle = '#fff'; ctx.beginPath(); ctx.arc(0, HY, HR, 0, 7); ctx.stroke();
@@ -454,7 +460,7 @@ function drawPerson(p, t) {
     ctx.fillStyle = p.hair; ctx.beginPath(); ctx.arc(0, HY - 3, HR - 1, Math.PI * 1.02, Math.PI * 1.98); ctx.closePath(); ctx.fill(); ctx.stroke();
     if (p.hairStyle === 1) { ctx.fillRect(-HR, HY - 6, 8, 22); ctx.fillRect(HR - 8, HY - 6, 8, 22); }
     if (p.hairStyle === 2) { ctx.beginPath(); ctx.arc(0, HY - HR - 4, 9, 0, 7); ctx.fill(); ctx.stroke(); }
-    ctx.fillStyle = '#d3122a'; ctx.fillRect(-HR + 1, HY - 9, (HR - 1) * 2, 6); // shirit protestuesi
+    if (!p.cop) { ctx.fillStyle = '#d3122a'; ctx.fillRect(-HR + 1, HY - 9, (HR - 1) * 2, 6); } // shirit protestuesi
     ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.ellipse(-8, HY + 2, 5, 6, 0, 0, 7); ctx.ellipse(8, HY + 2, 5, 6, 0, 0, 7); ctx.fill();
     ctx.fillStyle = '#1a1a24'; ctx.beginPath(); ctx.arc(-7, HY + 3, 3, 0, 7); ctx.arc(9, HY + 3, 3, 0, 7); ctx.fill();
     ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(-6, HY + 2, 1.1, 0, 7); ctx.arc(10, HY + 2, 1.1, 0, 7); ctx.fill();
@@ -462,6 +468,19 @@ function drawPerson(p, t) {
     const chant = !walking && Math.sin(t * 5 + p.mouthT * 3) > .1;
     if (chant || throwing) { ctx.fillStyle = '#5a1620'; ctx.beginPath(); ctx.ellipse(0, HY + 14, 6, 5.5, 0, 0, 7); ctx.fill(); ctx.fillStyle = '#ff7b8a'; ctx.beginPath(); ctx.ellipse(0, HY + 16, 3.5, 2, 0, 0, 7); ctx.fill(); }
     else { ctx.strokeStyle = '#5a1620'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(0, HY + 11, 5, .2, Math.PI - .2); ctx.stroke(); }
+  }
+  if (p.cop) { // kapele + syze dielli
+    ctx.fillStyle = '#14213d'; ctx.strokeStyle = OUT; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(0, HY - 4, HR, Math.PI, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
+    rr(ctx, -HR - 5, HY - 8, HR * 2 + 10, 8, 3); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#ffd60a'; ctx.beginPath(); ctx.arc(0, HY - 17, 4.5, 0, 7); ctx.fill();
+    ctx.fillStyle = '#0b0b12'; rr(ctx, -17, HY + 1, 15, 9, 3); ctx.fill(); rr(ctx, 2, HY + 1, 15, 9, 3); ctx.fill();
+    ctx.fillRect(-3, HY + 3, 6, 2.5);
+    ctx.fillStyle = '#ffd60a'; ctx.beginPath(); ctx.arc(-12, -50, 4, 0, 7); ctx.fill(); // distinktiv në gjoks
+  }
+  if (p.dazed > 0) { // yje mbi kokë kur i godet gazi
+    ctx.fillStyle = '#ffd60a'; ctx.font = '900 18px "Segoe UI",Arial,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (let k = 0; k < 3; k++) { const a = t * 5 + k * 2.09; ctx.fillText('★', Math.cos(a) * 20, HY - HR - 8 + Math.sin(a) * 6); }
   }
   // fjalë "!" kur thërret
   if (!walking && Math.sin(t * 5 + p.mouthT * 3) > .6 && !p.sign) { ctx.fillStyle = '#ffd60a'; ctx.font = '900 20px Impact,sans-serif'; ctx.textAlign = 'center'; ctx.strokeStyle = OUT; ctx.lineWidth = 4; ctx.strokeText('!', 34, HY - 22); ctx.fillText('!', 34, HY - 22); }
@@ -475,7 +494,11 @@ function drawPerson(p, t) {
     ctx.fillStyle = '#c1121f'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; fitText(ctx, p.sign, 78, 20, '900'); ctx.fillText(p.sign, 0, -85);
     ctx.restore(); top = -196;
   }
-  if (!p.ambient) {
+  if (p.cop) {
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '900 15px "Segoe UI",Arial,sans-serif';
+    ctx.fillStyle = 'rgba(12,10,30,.85)'; rr(ctx, -34, top - 12, 68, 24, 12); ctx.fill(); ctx.strokeStyle = '#4cc9f0'; ctx.lineWidth = 2.5; ctx.stroke();
+    ctx.fillStyle = '#4cc9f0'; ctx.fillText('POLICIA', 0, top);
+  } else if (!p.ambient) {
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     const nm = p.name.length > 14 ? p.name.slice(0, 13) + '…' : p.name;
     fitText(ctx, nm, 130, 22, '800'); const nw = ctx.measureText(nm).width + 22;
@@ -511,6 +534,7 @@ function launch(p, type, b, o = {}) {
   sfx.whoosh();
 }
 function impact(q) {
+  if (q.type === 'gas') return gasImpact(q);
   const b = q.b, lx = q.x1 - b.x, ly = q.y1 - b.y, c = b.sx;
   S.hits++; b.dirty = true; S.combo = (S.comboT > 0 ? S.combo : 0) + 1; S.comboT = 3; S.comboPop = 1;
   switch (q.type) {
@@ -529,6 +553,99 @@ function impact(q) {
       floatText(q.x1, q.y1 - 30, 'BUM!', '#ffb703'); b.shake = .6; S.shake = Math.max(S.shake, .5); S.flash = .35; S.flashCol = '#ff8a00'; sfx.boom(); break;
   }
 }
+/* ------------------------------ policia (animacion satirik) ------------------------------ */
+const isDetained = n => S.detained.some(d => d.name === n);
+const freePeople = () => S.crowd.filter(p => !p.leaving && !p.arrested);
+function spawnCop() {
+  const side = Math.random() < .5 ? -1 : 1, sp = { x: rnd(110, W - 110), y: rnd(CFG.laneTop + 10, CFG.laneBottom + 20) };
+  const c = { cop: true, ambient: true, name: '', x: side < 0 ? -80 : W + 80, y: sp.y, tx: sp.x, ty: sp.y, walking: true, state: 'enter', leaving: false,
+    color: '#1d3557', skin: pick(SKINS), hair: '#111', hairStyle: 0, bob: rnd(0, 7), sign: null, throwT: 0, hype: .5, jump: 0, say: '', sayT: 0, score: 0,
+    mouthT: rnd(0, 2), nextAct: S.t + rnd(1.5, 3), target: null, img: null, dazed: 0 };
+  S.cops.push(c); return c;
+}
+function startRaid() {
+  if (S.raid) return;
+  const n = clamp(Math.round(freePeople().length / 5), 5, 9);
+  S.raid = { t: 0, dur: 16, arrests: 0, max: clamp(Math.round(freePeople().length * .7), 6, 16) };
+  pushBanner('raid', '🚨 POLICIA ARRIN NË SHESH!', 'Protestuesit po largohen…');
+  for (let i = 0; i < 4; i++) later(i * .75, () => sfx.siren());
+  for (let i = 0; i < n; i++) later(i * .25, spawnCop);
+  S.shake = Math.max(S.shake, .3);
+}
+function copThrow(c, target) {
+  const sc = scaleAt(c.y), x0 = c.x + 22 * sc, y0 = c.y - 88 * sc, x1 = target.x + rnd(-25, 25), y1 = target.y - 20;
+  S.proj.push({ type: 'gas', x: x0, y: y0, x0, y0, x1, y1, t: 0, dur: clamp(Math.hypot(x1 - x0, y1 - y0) / 700, .6, 1.1), arc: rnd(120, 220), rot: 0, vr: rnd(-10, 10), col: '#d9deef', b: null });
+  c.throwT = .35; sfx.whoosh();
+}
+function gasImpact(q) {
+  for (let i = 0; i < 20; i++) P({ x: q.x1 + rnd(-30, 30), y: q.y1 + rnd(-20, 20), vx: rnd(-40, 40), vy: rnd(-55, -8), life: rnd(1.6, 2.6), size: rnd(18, 32), grow: 22, col: '#d9deef', alpha: .26, type: 'smoke' });
+  S.gas.push({ x: q.x1, y: q.y1, t: 0, dur: 3.2 }); floatText(q.x1, q.y1 - 50, 'GAZ!', '#e8ecff'); sfx.hiss();
+}
+function updatePolice(dt) {
+  if (!S.raid && CFG.police > 0 && S.t > S.nextRaid && freePeople().length >= 4) startRaid();
+  const raid = S.raid;
+  if (raid) raid.t += dt;
+  const active = raid && raid.t < raid.dur;
+  for (const g of S.gas) { // gazi mbështjell protestuesit aty pranë
+    g.t += dt;
+    for (const p of S.crowd) if (!p.arrested && Math.hypot(p.x - g.x, (p.y - g.y) * 1.4) < 130) p.dazed = Math.max(p.dazed || 0, 2);
+  }
+  S.gas = S.gas.filter(g => g.t < g.dur);
+  for (const p of S.crowd) p.dazed = Math.max(0, (p.dazed || 0) - dt);
+  for (let i = S.cops.length - 1; i >= 0; i--) {
+    const c = S.cops[i];
+    c.throwT = Math.max(0, c.throwT - dt); c.hype = Math.max(.25, c.hype - dt * .5);
+    const go = (tx, ty, speed) => { const dx = tx - c.x, dy = ty - c.y, d = Math.hypot(dx, dy), st = speed * dt; c.walking = d > st; if (d <= st) { c.x = tx; c.y = ty; } else { c.x += dx / d * st; c.y += dy / d * st; } return d <= st; };
+    if (c.state === 'enter') { if (go(c.tx, c.ty, 230)) c.state = 'idle'; }
+    else if (c.state === 'idle') {
+      c.walking = false;
+      if (!active) { c.state = 'leave'; c.tx = c.x < W / 2 ? -100 : W + 100; continue; }
+      if (S.t > c.nextAct) {
+        const pool = freePeople(), tgt = pick(pool);
+        c.nextAct = S.t + rnd(1.1, 2.2);
+        if (tgt && (raid.t < 3 || Math.random() < .5 || raid.arrests >= raid.max)) copThrow(c, tgt);
+        else if (tgt) {
+          const cand = pool.filter(p => !p.targeted).sort((a, b) => Math.hypot(a.x - c.x, a.y - c.y) - Math.hypot(b.x - c.x, b.y - c.y))[0];
+          if (cand) { c.target = cand; cand.targeted = true; c.state = 'chase'; }
+        }
+      }
+    } else if (c.state === 'chase') {
+      const p = c.target;
+      if (!p || p.leaving || p.arrested || !S.crowd.includes(p)) { if (p) p.targeted = false; c.target = null; c.state = 'idle'; continue; }
+      if (go(p.x, p.y, 270) || Math.hypot(p.x - c.x, p.y - c.y) < 34) {
+        p.arrested = true; p.walking = true; p.sign = null; p.hype = .25; p.dazed = 0;
+        c.state = 'escort'; c.dir = c.x < W / 2 ? -1 : 1; c.tx = c.dir < 0 ? -110 : W + 110; c.ty = c.y; sfx.whoosh();
+        floatText(c.x, c.y - 140, 'KAPE!', '#4cc9f0');
+      }
+    } else if (c.state === 'escort') {
+      const p = c.target; go(c.tx, c.ty, 165);
+      if (p) { p.x = c.x - c.dir * 40; p.y = c.y + 4; }
+      if (c.x < -60 || c.x > W + 60) {
+        if (p) {
+          const idx = S.crowd.indexOf(p); if (idx >= 0) S.crowd.splice(idx, 1);
+          if (!p.ambient) { S.byName.delete(p.name); S.detained.push({ name: p.name, color: p.color, skin: p.skin, hair: p.hair, hairStyle: p.hairStyle, sign: p.sign || pick(SLOGANS), img: p.img }); }
+          raid && raid.arrests++;
+        }
+        c.target = null;
+        if (active) { Object.assign(c, { x: c.dir < 0 ? -80 : W + 80, state: 'enter', tx: rnd(110, W - 110), ty: rnd(CFG.laneTop + 10, CFG.laneBottom + 20), nextAct: S.t + rnd(1, 2) }); }
+        else { c.state = 'leave'; c.tx = c.dir < 0 ? -120 : W + 120; }
+      }
+    } else if (c.state === 'leave') {
+      if (go(c.tx, c.y, 230)) S.cops.splice(i, 1);
+    }
+  }
+  if (raid && !active && S.cops.length === 0) {
+    S.raid = null; S.nextRaid = S.t + CFG.police * rnd(.8, 1.2);
+    for (const p of S.crowd) p.targeted = false;
+    if (S.detained.length) pushBanner('raid', `🚔 ${S.detained.length} PROTESTUES TË NDALUAR`, 'Jep LIKE ❤️ që t\'i kthesh në shesh!');
+    else pushBanner('join', 'POLICIA U LARGUA', 'Askush nuk u ndalua. Protesta vazhdon!');
+  }
+}
+function revive(i) {
+  const d = S.detained.splice(i, 1)[0]; if (!d) return;
+  const p = addPerson(d.name); Object.assign(p, { color: d.color, skin: d.skin, hair: d.hair, hairStyle: d.hairStyle, sign: d.sign, img: d.img, score: S.scores[d.name] || 0 });
+  p.jump = 1; pushBanner('join', '✊ U KTHYE FALË LIKE-VE:', '@' + d.name, p.img); sfx.join();
+}
 function finale(user) {
   pushBanner('gift', `🎆 FINALE nga @${user}`, 'Të gjithë gjuajnë bojë!');
   const people = S.crowd.filter(p => !p.leaving);
@@ -543,7 +660,7 @@ function finale(user) {
 /* ------------------------------ ngjarjet ------------------------------ */
 function pushBanner(kind, l1, l2, img) { S.queue.push({ kind, l1, l2, img }); if (S.queue.length > 14) S.queue.splice(1, 1); }
 function onJoin(user, avatar) {
-  if (!user) return;
+  if (!user || isDetained(user)) return;
   const isNew = !S.byName.has(user);
   const p = addPerson(user); setAvatar(p, avatar); p.jump = 1;
   if (isNew) S.joined++;
@@ -552,6 +669,7 @@ function onJoin(user, avatar) {
 }
 function onGift(user, name, diamonds, count, avatar) {
   count = Math.max(1, count | 0); diamonds = Math.max(1, diamonds | 0);
+  const di = S.detained.findIndex(d => d.name === user); if (di >= 0) revive(di); // dhurata e kthen në shesh
   const tier = tierOf(diamonds), p = getPerson(user, avatar);
   S.scores[user] = (S.scores[user] || 0) + diamonds * count; p.score = S.scores[user]; p.jump = 1;
   if (tier.key === 'finale') return finale(user);
@@ -560,12 +678,16 @@ function onGift(user, name, diamonds, count, avatar) {
   for (let i = 0; i < n; i++) later(i * .28, () => launch(p, tier.key, b));
 }
 function onLike(user, count, avatar) {
+  const di = S.detained.findIndex(d => d.name === user);
+  if (di >= 0) return revive(di);                          // like nga i ndaluari → kthehet vetë
+  if (S.detained.length && ++S.likeCnt % 2 === 0) revive(0); // like të tjera kthejnë të ndaluarit një nga një
   S.likeBudget = Math.min(S.likeBudget + Math.min(count || 1, 5), 10);
   if (S.likeBudget < 1) return;
   S.likeBudget -= 1;
   const p = getPerson(user, avatar); if (S.proj.length < 60) launch(p, 'paint', chooseTarget(user), { small: true });
 }
 function onChat(user, text, avatar) {
+  if (isDetained(user)) return;
   const p = getPerson(user, avatar), low = (text || '').toLowerCase();
   const hit = /bashki/.test(low) ? 'bashkia' : /kryemin/.test(low) ? 'kryeministria' : /arsim/.test(low) ? 'arsimi' : null;
   if (hit) { S.prefs[user] = hit; p.say = '🎯 ' + bById(hit).label; } else p.say = (text || '').slice(0, 34);
@@ -577,9 +699,10 @@ function handle(m) {
     case 'gift': return onGift(m.user, m.gift, m.diamonds, m.count, m.avatar);
     case 'like': return onLike(m.user, m.count, m.avatar);
     case 'chat': return onChat(m.user, m.text, m.avatar);
+    case 'police': return startRaid();
   }
 }
-window.__game = { handle, S, demoAvatar }; // për teste / integrime të tjera
+window.__game = { handle, S, demoAvatar, startRaid }; // për teste / integrime të tjera
 
 /* ------------------------------ lidhja me TikTok (WebSocket) ------------------------------ */
 (function connect() {
@@ -615,6 +738,7 @@ addEventListener('keydown', e => {
   if (k === 'j') { const u = fake(); handle({ type: 'join', user: u, avatar: demoAvatar(u) }); }
   else if (k === 'l') handle({ type: 'like', user: fake(), count: 3 });
   else if (k === 'm') sfx.toggle();
+  else if (k === 'p') startRaid();
   else if ('12345'.includes(k) && k) handle({ type: 'gift', user: fake(), gift: 'Test', diamonds: [1, 10, 30, 100, 500][+k - 1], count: 1 });
 });
 
@@ -626,6 +750,7 @@ function update(dt) {
   S.t += dt;
   for (let i = S.timers.length - 1; i >= 0; i--) if (S.timers[i].at <= S.t) { const f = S.timers[i].fn; S.timers.splice(i, 1); f(); }
   S.likeBudget = Math.min(10, S.likeBudget + dt * 6);
+  updatePolice(dt);
   S.comboT = Math.max(0, S.comboT - dt); S.comboPop = Math.max(0, S.comboPop - dt * 3);
   const tp = Object.entries(S.scores).sort((a, b) => b[1] - a[1])[0]; S.topName = tp ? tp[0] : '';
   if (S.chant) { S.chant.t += dt; if (S.chant.t > 1.8) S.chant = null; }
@@ -640,6 +765,7 @@ function update(dt) {
     const p = S.crowd[i];
     p.throwT = Math.max(0, p.throwT - dt); p.hype = Math.max(.25, p.hype - dt * .5); p.sayT = Math.max(0, p.sayT - dt);
     if (p.jump > 0) p.jump = Math.max(0, p.jump - dt * 1.6);
+    if (p.arrested) continue;
     if (p.walking) {
       const dx = p.tx - p.x, dy = p.ty - p.y, d = Math.hypot(dx, dy), step = 190 * dt;
       if (d <= step) { p.x = p.tx; p.y = p.ty; p.walking = false; if (p.leaving) S.crowd.splice(i, 1); }
@@ -652,7 +778,8 @@ function update(dt) {
     const q = S.proj[i]; q.t += dt / q.dur; q.rot += q.vr * dt;
     const t = Math.min(q.t, 1);
     q.x = lerp(q.x0, q.x1, t); q.y = lerp(q.y0, q.y1, t) - Math.sin(t * Math.PI) * q.arc;
-    if (q.type === 'molotov' && Math.random() < .8) P({ x: q.x, y: q.y, vx: rnd(-30, 30), vy: rnd(-60, 0), life: rnd(.25, .5), size: rnd(8, 15), col: '#ff8a00', type: 'fire' });
+    if (q.type === 'gas' && Math.random() < .6) P({ x: q.x, y: q.y, vx: rnd(-20, 20), vy: rnd(-20, 10), life: rnd(.6, 1), size: rnd(8, 14), grow: 16, col: '#d9deef', alpha: .35, type: 'smoke' });
+    else if (q.type === 'molotov' && Math.random() < .8) P({ x: q.x, y: q.y, vx: rnd(-30, 30), vy: rnd(-60, 0), life: rnd(.25, .5), size: rnd(8, 15), col: '#ff8a00', type: 'fire' });
     else if (Math.random() < .35) P({ x: q.x, y: q.y, vx: rnd(-20, 20), vy: rnd(-10, 30), g: 200, life: rnd(.25, .45), size: rnd(2, 4), col: q.type === 'stone' ? '#aaa' : q.col, type: 'dot' });
     if (q.t >= 1) { S.proj.splice(i, 1); impact(q); }
   }
@@ -720,7 +847,7 @@ function drawParts() {
       ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(.5, p.size * (p.type === 'fire' ? (.4 + k * .6) : 1)), 0, 7); ctx.fill();
       ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
     } else if (p.type === 'smoke') {
-      ctx.globalAlpha = k * .3; ctx.fillStyle = p.col; ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, 7); ctx.fill(); ctx.globalAlpha = 1;
+      ctx.globalAlpha = k * (p.alpha ?? .3); ctx.fillStyle = p.col; ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, 7); ctx.fill(); ctx.globalAlpha = 1;
     } else if (p.type === 'confetti') {
       ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.globalAlpha = clamp(k * 2, 0, 1); ctx.fillStyle = p.col; ctx.fillRect(-p.size / 2, -p.size / 4, p.size, p.size / 2); ctx.restore(); ctx.globalAlpha = 1;
     } else {
@@ -736,6 +863,8 @@ function drawProj(q) {
       ctx.fillStyle = '#222'; ctx.fillRect(-4, -34, 8, 12); ctx.fillStyle = '#ffd23f'; ctx.beginPath(); ctx.arc(0, -37, 5, 0, 7); ctx.fill(); break;
     case 'stone': ctx.fillStyle = '#8b8b98'; poly(ctx, [[-16, -6], [-6, -16], [10, -13], [18, 0], [10, 14], [-8, 15], [-18, 6]]); ctx.fill();
       ctx.strokeStyle = '#4a4a56'; ctx.lineWidth = 3; ctx.stroke(); ctx.fillStyle = 'rgba(255,255,255,.2)'; poly(ctx, [[-10, -8], [2, -11], [0, -2]]); ctx.fill(); break;
+    case 'gas': ctx.fillStyle = '#8d99ae'; rr(ctx, -8, -14, 16, 28, 4); ctx.fill(); ctx.strokeStyle = OUT; ctx.lineWidth = 2.5; ctx.stroke();
+      ctx.fillStyle = '#ef233c'; ctx.fillRect(-8, -3, 16, 6); ctx.fillStyle = '#2b2d42'; ctx.fillRect(-4, -19, 8, 6); break;
     case 'molotov':
       ctx.fillStyle = '#2e8b57'; rr(ctx, -10, -8, 20, 28, 8); ctx.fill(); ctx.fillRect(-4, -22, 8, 16);
       ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.fillRect(-6, -2, 3, 16);
@@ -765,7 +894,7 @@ function drawBanner() {
   let k = t < a ? 1 - Math.pow(1 - t / a, 3) : t > out ? 1 - (t - out) / a : 1;
   k = clamp(k, 0, 1);
   const w = 940, h = 96, x = (W - w) / 2 + (1 - k) * -W * .6, y = 300;
-  const acc = bn.kind === 'join' ? '#2ecc71' : bn.kind === 'gift' ? '#ff9f1c' : '#b84dff';
+  const acc = bn.kind === 'join' ? '#2ecc71' : bn.kind === 'gift' ? '#ff9f1c' : bn.kind === 'raid' ? '#ff4d6d' : '#b84dff';
   ctx.save(); ctx.globalAlpha = k;
   ctx.shadowColor = acc; ctx.shadowBlur = 24;
   ctx.fillStyle = 'rgba(8,10,28,.88)'; rr(ctx, x, y, w, h, 22); ctx.fill(); ctx.shadowBlur = 0;
@@ -826,6 +955,14 @@ function drawHUD(t) {
   });
   ctx.font = '700 22px "Segoe UI",Arial,sans-serif'; ctx.fillStyle = 'rgba(255,255,255,.9)';
   outlined(ctx, 'Shkruaj në chat:  !bashkia   !kryeministria   !arsimi   për të zgjedhur objektivin', W / 2, 1782, '#fff', 'rgba(0,0,0,.8)', 4);
+  outlined(ctx, '🚔 Policia vjen herë pas here — jep ❤️ LIKE që t\'i kthesh protestuesit!', W / 2, 1814, '#ffd60a', 'rgba(0,0,0,.8)', 4);
+  if (S.detained.length) {
+    const nm = S.detained.slice(0, 3).map(d => '@' + (d.name.length > 9 ? d.name.slice(0, 8) + '…' : d.name)).join(' ') + (S.detained.length > 3 ? ` +${S.detained.length - 3}` : '');
+    const txt = `🚔 TË NDALUAR: ${S.detained.length}  ·  ${nm}  ·  LIKE ❤️ = KTHEHEN`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; fitText(ctx, txt, W - 130, 24, '900'); const pw = ctx.measureText(txt).width + 40;
+    ctx.fillStyle = `rgba(${Math.floor(t * 3) % 2 ? '190,20,50' : '30,60,200'},.88)`; rr(ctx, (W - pw) / 2, 1546, pw, 36, 18); ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); ctx.fillStyle = '#fff'; ctx.fillText(txt, W / 2, 1565);
+  }
   if (Q.has('debug')) { ctx.textAlign = 'left'; ctx.font = '16px monospace'; ctx.fillStyle = '#0f0'; ctx.fillText('ws: ' + S.status, 12, 1900); }
 }
 function render() {
@@ -848,7 +985,7 @@ function render() {
     if (b.post && !b.photo) b.post(ctx, b, t);
     ctx.restore();
   }
-  const sorted = S.crowd.slice().sort((a, b) => a.y - b.y);
+  const sorted = S.crowd.concat(S.cops).sort((a, b) => a.y - b.y);
   for (const p of sorted) drawPerson(p, t);
   for (const q of S.proj) drawProj(q);
   drawParts();
@@ -859,6 +996,12 @@ function render() {
   }
   ctx.restore();
   if (S.flash > 0) { ctx.globalAlpha = Math.min(.35, S.flash) ; ctx.fillStyle = S.flashCol; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
+  if (S.raid && S.raid.t < S.raid.dur + 1) { // drita sirene të kuqe/blu
+    const ph = Math.floor(t * 3) % 2, a = clamp(Math.min(S.raid.t, S.raid.dur + 1 - S.raid.t), 0, 1) * .3;
+    const g = ctx.createLinearGradient(0, 0, W, 0);
+    g.addColorStop(0, ph ? `rgba(255,40,60,${a})` : `rgba(40,100,255,${a})`); g.addColorStop(.5, 'rgba(0,0,0,0)'); g.addColorStop(1, ph ? `rgba(40,100,255,${a})` : `rgba(255,40,60,${a})`);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  }
   ctx.drawImage(vig, 0, 0);
   drawHUD(t);
 }

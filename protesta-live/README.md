@@ -33,9 +33,16 @@ Ka edhe renditje (top 3 gjuajtësit), statistika dhe zë (mund ta çosh me `?mut
 - 📣 Çdo ~25 sekonda turma thërret **MJAFT! / DREJTËSI! / ARSIM PËR TË GJITHË!** dhe kërcen
 - 🔦 Drita kërkuese në qiell, godinat me pamje nate, shkëlqim i kuq kur zemërimi kalon 50%
 
+## 🚔 Policia (animacion satirik)
+Rreth çdo 100 sekonda vjen policia me sirenë: hedh gaz tymi, i kap protestuesit dhe i largon nga skena (deri 16 për raund).
+Të ndaluarit shfaqen në një shirit të kuq/blu. **LIKE i kthen**: kur një i ndaluar jep like kthehet vetë,
+ndërsa like nga të tjerët kthejnë të ndaluarit një nga një. Një dhuratë e kthen gjithashtu.
+- Shpeshtësia: `?police=60` (çdo 60 s), `?police=0` e fikë. Tasti `P` e nis menjëherë (provë).
+- Nga serveri: dërgo `{"type": "police"}` te WebSocket për ta thirrur me dorë.
+
 ## Provë e shpejtë (pa TikTok)
 Hape `index.html` në shfletues me `?demo=1` (simulim automatik), ose pa parametra dhe shtyp:
-`J` hyrje · `1`–`5` dhurata (nivelet) · `L` like · `M` zë on/off.
+`J` hyrje · `P` policia · `1`–`5` dhurata (nivelet) · `L` like · `M` zë on/off.
 
 ## Lidhja me live-in real (Python)
 ```bash

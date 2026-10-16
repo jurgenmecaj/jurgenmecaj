@@ -46,7 +46,7 @@ Hape `index.html` në shfletues me `?demo=1` (simulim automatik), ose pa paramet
 
 ## Windows: me një klik
 Dyfisho **`start.bat`** (instalon bibliotekat, hap dritaren e lojës dhe lidhet me `@partiamegrada`).
-`start.bat @emri` për llogari tjetër, `start.bat demo` për provë pa TikTok.
+`start.bat @emri 9000` për një port tjetër të faqes (si 3-i opsional: `start.bat @emri 9000 9001` ndryshon edhe portën e lidhjes), `start.bat @emri` për llogari tjetër, `start.bat demo` për provë pa TikTok.
 
 ## Lidhja me live-in real (Python)
 ```bash

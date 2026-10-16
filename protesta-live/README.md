@@ -44,6 +44,10 @@ ndërsa like nga të tjerët kthejnë të ndaluarit një nga një. Një dhuratë
 Hape `index.html` në shfletues me `?demo=1` (simulim automatik), ose pa parametra dhe shtyp:
 `J` hyrje · `P` policia · `1`–`5` dhurata (nivelet) · `L` like · `M` zë on/off.
 
+## Windows: me një klik
+Dyfisho **`start.bat`** (instalon bibliotekat, hap dritaren e lojës dhe lidhet me `@partiamegrada`).
+`start.bat @emri` për llogari tjetër, `start.bat demo` për provë pa TikTok.
+
 ## Lidhja me live-in real (Python)
 ```bash
 cd protesta-live

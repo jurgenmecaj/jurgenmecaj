@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Ura mes TikTok LIVE dhe lojës "Protesta Live".
+"""Serveri i lojës "Protesta Live" (pa TikTok brenda).
 
-Lexon ngjarjet e live-it (hyrje, dhurata, like, komente) me bibliotekën
-TikTokLive dhe i dërgon te faqja e lojës përmes WebSocket. Gjithashtu shërben
-vetë index.html, kështu që mjafton një komandë:
+Shërben faqen e lojës dhe është "qendra" ku lidhen:
+  - dritaret e lojës (dëgjojnë ngjarje),
+  - ura e TikTok-ut (tiktok_bridge.py) që dërgon ngjarjet kur live-i hapet.
+Kështu loja hapet kur të duash, dhe TikTok mund të lidhet më vonë ose të rilidhet.
 
-    python server.py --user @emri_i_llogarise
-
-Pa TikTok (vetëm provë):  python server.py --demo
+    python server.py                 # loja, pa TikTok
+    python server.py --demo          # loja me ngjarje të simuluara
 """
 import argparse
 import asyncio
@@ -19,34 +19,14 @@ import random
 import threading
 import urllib.request
 from pathlib import Path
-from urllib.parse import parse_qs, quote, urlparse
+from urllib.parse import parse_qs, urlparse
 
 import websockets
 
-log = logging.getLogger("protesta")
+log = logging.getLogger("loja")
 ROOT = Path(__file__).resolve().parent
 clients: set = set()
-seen_users: set = set()
-
-
-async def broadcast(msg: dict) -> None:
-    if not clients:
-        return
-    data = json.dumps(msg, ensure_ascii=False)
-    await asyncio.gather(*(c.send(data) for c in list(clients)), return_exceptions=True)
-
-
-async def ws_handler(ws, *_):
-    clients.add(ws)
-    log.info("Loja u lidh (%d klientë)", len(clients))
-    try:
-        async for _ in ws:  # nuk presim mesazhe nga loja
-            pass
-    finally:
-        clients.discard(ws)
-
-
-ALLOWED_AVATAR_HOSTS = ("tiktokcdn", "ibyteimg", "byteimg", "tiktokv", "byteoversea")
+ALLOWED_AVATAR_HOSTS = ("tiktokcdn", "ibyteimg", "byteimg", "tiktokv", "byteoversea", "muscdn", "ibytedtos", "bytedance")
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -54,6 +34,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def log_message(self, *a, **k):
         pass
+
+    def end_headers(self):
+        self.send_header("Cache-Control", "no-store")  # gjithmonë versioni i fundit i lojës
+        super().end_headers()
 
     def do_GET(self):
         url = urlparse(self.path)
@@ -65,10 +49,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.send_error(400, "host i palejuar")
             return
         try:
-            req = urllib.request.Request(target, headers={"User-Agent": "Mozilla/5.0"})
+            req = urllib.request.Request(target, headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.tiktok.com/"})
             with urllib.request.urlopen(req, timeout=8) as r:
                 body, ctype = r.read(3_000_000), r.headers.get("Content-Type", "image/jpeg")
-        except Exception:
+        except Exception as e:
+            log.warning("Foto e profilit nuk u shkarkua: %s", e)
             self.send_error(502, "foto e padisponueshme")
             return
         self.send_response(200)
@@ -79,76 +64,30 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
 
-def avatar_url(user) -> str:
-    """Zgjedh një URL fotoje që shfletuesi e shfaq (jo HEIC) dhe e kalon nga proxy lokal."""
-    for attr in ("avatar_large", "avatar_medium", "avatar_thumb"):
-        img = getattr(user, attr, None)
-        urls = getattr(img, "url_list", None) or getattr(img, "urls", None) or []
-        for u in urls:
-            if u.startswith("https://") and ".heic" not in u:
-                return "/avatar?u=" + quote(u, safe="")
-    return ""
-
-
 def serve_http(port: int) -> None:
     handler = functools.partial(Handler, directory=str(ROOT))
     httpd = http.server.ThreadingHTTPServer(("0.0.0.0", port), handler)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
 
 
-def display_name(user) -> str:
-    return (getattr(user, "nickname", None) or getattr(user, "unique_id", None) or "anonim").strip()
+async def broadcast(msg: dict, skip=None) -> None:
+    data = json.dumps(msg, ensure_ascii=False)
+    await asyncio.gather(*(c.send(data) for c in list(clients) if c is not skip), return_exceptions=True)
 
 
-async def emit_join_once(name: str, avatar: str = "") -> None:
-    """TikTok nuk dërgon gjithmonë JoinEvent; hyrja e parë e çdo përdoruesi shfaqet si 'join'."""
-    if name not in seen_users:
-        seen_users.add(name)
-        await broadcast({"type": "join", "user": name, "avatar": avatar})
-
-
-def run_tiktok(unique_id: str):
-    from TikTokLive import TikTokLiveClient
-    from TikTokLive.events import CommentEvent, ConnectEvent, GiftEvent, JoinEvent, LikeEvent
-
-    client = TikTokLiveClient(unique_id=unique_id)
-
-    @client.on(ConnectEvent)
-    async def on_connect(event):
-        log.info("Lidhur me live-in e @%s", event.unique_id)
-
-    @client.on(JoinEvent)
-    async def on_join(event):
-        name = display_name(event.user)
-        seen_users.add(name)
-        await broadcast({"type": "join", "user": name, "avatar": avatar_url(event.user)})
-
-    @client.on(GiftEvent)
-    async def on_gift(event):
-        # dhuratat me seri numërohen vetëm kur seria mbaron
-        if event.gift.streakable and event.streaking:
-            return
-        name = display_name(event.user)
-        await emit_join_once(name, avatar_url(event.user))
-        await broadcast({
-            "type": "gift", "user": name, "avatar": avatar_url(event.user), "gift": event.gift.name,
-            "diamonds": event.gift.diamond_count or 1,
-            "count": event.repeat_count if event.gift.streakable else 1,
-        })
-
-    @client.on(LikeEvent)
-    async def on_like(event):
-        name = display_name(event.user)
-        await emit_join_once(name, avatar_url(event.user))
-        await broadcast({"type": "like", "user": name, "avatar": avatar_url(event.user), "count": getattr(event, "count", 1) or 1})
-
-    @client.on(CommentEvent)
-    async def on_comment(event):
-        name = display_name(event.user)
-        await emit_join_once(name, avatar_url(event.user))
-        await broadcast({"type": "chat", "user": name, "avatar": avatar_url(event.user), "text": event.comment})
-
-    return client
+async def ws_handler(ws, *_):
+    clients.add(ws)
+    log.info("U lidh një klient (%d gjithsej)", len(clients))
+    try:
+        async for raw in ws:  # çdo gjë që dërgon ura e TikTok-ut u përcillet dritareve të lojës
+            try:
+                msg = json.loads(raw)
+            except ValueError:
+                continue
+            await broadcast(msg, skip=ws)
+    finally:
+        clients.discard(ws)
+        log.info("Një klient u shkëput (%d mbeten)", len(clients))
 
 
 async def demo_events() -> None:
@@ -167,32 +106,27 @@ async def demo_events() -> None:
 
 
 async def main() -> None:
-    ap = argparse.ArgumentParser(description="Ura TikTok LIVE -> Protesta Live")
-    ap.add_argument("--user", help="@emri i llogarisë që është LIVE")
+    ap = argparse.ArgumentParser(description="Serveri i lojës Protesta Live")
     ap.add_argument("--demo", action="store_true", help="ngjarje të simuluara, pa TikTok")
     ap.add_argument("--ws-port", type=int, default=8124)
     ap.add_argument("--http-port", type=int, default=8123)
     args = ap.parse_args()
-    if not args.user and not args.demo:
-        ap.error("jep --user @llogaria ose përdor --demo")
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
     try:
         serve_http(args.http_port)
     except OSError:
-        raise SystemExit(f"Porta {args.http_port} eshte e zene nga nje aplikacion tjeter. Provo: python server.py --user @emri --http-port 9123")
-    log.info("Hap në shfletues:  http://localhost:%d", args.http_port)
-
+        raise SystemExit(f"Porta {args.http_port} eshte e zene nga nje aplikacion tjeter. Provo: python server.py --http-port 9123")
     try:
         ws_server = await websockets.serve(ws_handler, "0.0.0.0", args.ws_port)
     except OSError:
-        raise SystemExit(f"Porta {args.ws_port} eshte e zene. Provo: python server.py --user @emri --ws-port 9124")
+        raise SystemExit(f"Porta {args.ws_port} eshte e zene. Provo: python server.py --ws-port 9124")
+    log.info("LOJA GATI: hap http://localhost:%d   (TikTok lidhet më vonë me tiktok_bridge.py)", args.http_port)
     async with ws_server:
         if args.demo:
             await demo_events()
         else:
-            client = run_tiktok(args.user.lstrip("@"))
-            await client.connect()  # bllokon derisa mbaron live-i
+            await asyncio.Future()  # punon pafund
 
 
 if __name__ == "__main__":

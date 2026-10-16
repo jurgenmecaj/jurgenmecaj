@@ -57,18 +57,22 @@ bombë me bojë → policia mpaket 2 s dhe njollosët; gur/molotov → policia r
 Hape `index.html` në shfletues me `?demo=1` (simulim automatik), ose pa parametra dhe shtyp:
 `J` hyrje · `P` policia · `1`–`5` dhurata (nivelet) · `L` like · `M` zë on/off.
 
-## Windows: me një klik
-Dyfisho **`start.bat`** (instalon bibliotekat, hap dritaren e lojës dhe lidhet me `@partiamegrada`).
-`start.bat @emri 9123` për një port tjetër të faqes (si 3-i opsional: `start.bat @emri 9123 9124` ndryshon edhe portën e lidhjes), `start.bat @emri` për llogari tjetër, `start.bat demo` për provë pa TikTok.
+## Windows: dy skedarë të ndarë
+1. **`1-LOJA.bat`** — hap lojën (server + dritare). Pa TikTok; mund ta hapësh kur të duash. `1-LOJA.bat demo` për provë.
+2. **`2-TIKTOK.bat`** — lidhet me live-in e `@partiamegrada`. Mund ta nisësh para ose pas live-it: provon vetë çdo 5 s derisa
+   live-i të hapet, dhe rilidhet nëse ndërpritet. `2-TIKTOK.bat @emri` për llogari tjetër.
+
+Porta të tjera: `1-LOJA.bat 9123 9124` dhe `2-TIKTOK.bat @emri 9124`.
+Diagnostikim: hap `http://localhost:8123/?debug=1` — në fund të majtë shfaq statusin e lidhjes, fotove të godinave dhe fotove të profilit.
 
 ## Lidhja me live-in real (Python)
 ```bash
 cd protesta-live
 pip install -r requirements.txt
-python server.py --user @llogaria_jote      # duhet të jesh LIVE
-# hap http://localhost:8123
+python server.py                              # loja (http://localhost:8123)
+python tiktok_bridge.py --user @llogaria_jote # në një terminal tjetër; pret derisa live-i të hapet
 ```
-`python server.py --demo` nis serverin me ngjarje të simuluara. Porte: `--http-port`, `--ws-port`.
+`python server.py --demo` nis lojën me ngjarje të simuluara. Porta: `--http-port`, `--ws-port` (dhe `--ws-port` te `tiktok_bridge.py`).
 
 Nëse `pip install` dështon te `protobuf3-to-dict` (ndodh me Python shumë të ri ose setuptools të vjetër), provo:
 ```bash

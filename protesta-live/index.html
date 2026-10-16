@@ -124,6 +124,7 @@ function loadXp() { try { return JSON.parse(localStorage.getItem('pl_xp') || '{}
 function saveXp() { try { localStorage.setItem('pl_xp', JSON.stringify(Object.fromEntries(Object.entries(S.xp).sort((a, b) => b[1] - a[1]).slice(0, 500)))); } catch (e) {} }
 const lvlOf = x => 1 + Math.floor(Math.sqrt(x / 8));
 const S = {
+  dbg: { avOk: 0, avFail: 0, lastFail: '', photos: {} }, tt: 'waiting',
   xp: loadXp(), rr: {}, challenge: null, nextChallenge: 30, lastKind: '', victories: 0, hero: null, lastCd: -1, saveT: 0,
   t: 0, crowd: [], byName: new Map(), proj: [], parts: [], floats: [], timers: [],
   queue: [], banner: null, scores: {}, prefs: {}, hits: 0, joined: 0,
@@ -300,7 +301,7 @@ function refreshMask(b) {
   const c = b.masked.getContext('2d'); c.globalCompositeOperation = 'source-over'; c.clearRect(0, 0, b.w, b.h);
   c.drawImage(b.splat, 0, 0); c.globalCompositeOperation = 'destination-in'; c.drawImage(b.photo, 0, 0); c.globalCompositeOperation = 'source-over'; b.dirty = false;
 }
-for (const b of BUILD) { const im = new Image(); im.onload = () => applyPhoto(b, im); im.src = `assets/${b.id}.png`; }
+for (const b of BUILD) { const im = new Image(); im.onload = () => { applyPhoto(b, im); S.dbg.photos[b.id] = 'ok'; }; im.onerror = () => { S.dbg.photos[b.id] = 'MUNGON assets/' + b.id + '.png'; }; im.src = `assets/${b.id}.png`; }
 
 /* ------------------------------ efekte mbi godinat ------------------------------ */
 function splat(c, x, y, r, col) {
@@ -404,7 +405,9 @@ function addPerson(name, ambient = false) {
 const AVBASE = location.protocol.startsWith('http') ? '' : 'http://localhost:8123';
 function setAvatar(p, url) {
   if (!url || p.img || p.ambient) return;
-  const img = new Image(); img.onerror = () => { if (p.img === img) p.img = null; };
+  const img = new Image();
+  img.onload = () => { S.dbg.avOk++; };
+  img.onerror = () => { S.dbg.avFail++; S.dbg.lastFail = String(img.src).slice(-60); if (p.img === img) p.img = null; };
   img.src = /^(data:|https?:)/.test(url) && !url.startsWith('http://localhost') ? url : AVBASE + url; p.img = img;
 }
 const getPerson = (name, avatar) => { const p = S.byName.get(name) || addPerson(name); setAvatar(p, avatar); return p; };
@@ -815,6 +818,7 @@ function handle(m) {
     case 'like': return onLike(m.user, m.count, m.avatar);
     case 'chat': return onChat(m.user, m.text, m.avatar);
     case 'police': return startRaid();
+    case 'status': S.tt = m.state; return;
   }
 }
 window.__game = { handle, S, demoAvatar, startRaid, startChallenge, endChallenge }; // për teste / integrime të tjera
@@ -1137,7 +1141,12 @@ function drawHUD(t) {
     ctx.fillStyle = `rgba(${Math.floor(t * 3) % 2 ? '190,20,50' : '30,60,200'},.88)`; rr(ctx, (W - pw) / 2, 1546, pw, 36, 18); ctx.fill();
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); ctx.fillStyle = '#fff'; ctx.fillText(txt, W / 2, 1565);
   }
-  if (Q.has('debug')) { ctx.textAlign = 'left'; ctx.font = '16px monospace'; ctx.fillStyle = '#0f0'; ctx.fillText('ws: ' + S.status, 12, 1900); }
+  if (Q.has('debug')) {
+    const L = [`loja ↔ server: ${S.status}`, `TikTok: ${S.tt === 'connected' ? 'LIDHUR ✔' : 'duke pritur live-in…'}`,
+      ...BUILD.map(b => `foto ${b.id}: ${S.dbg.photos[b.id] || '…'}`), `foto profili: ${S.dbg.avOk} ok · ${S.dbg.avFail} dështuan ${S.dbg.lastFail}`];
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.font = '700 18px monospace';
+    L.forEach((t, i) => outlined(ctx, t, 14, 1835 + i * 22, /MUNGON|dështuan [^0]/.test(t) ? '#ff6b6b' : '#7cff9a', '#000', 4));
+  }
 }
 function render() {
   const t = S.t;

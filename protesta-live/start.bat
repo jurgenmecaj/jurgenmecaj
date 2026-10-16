@@ -6,14 +6,14 @@ title Protesta Live
 rem Perdorimi:  start.bat            -> live i @partiamegrada
 rem             start.bat @emri     -> live i nje llogarie tjeter
 rem             start.bat demo      -> prove pa TikTok
-rem             start.bat @emri 9000        -> porta e faqes 9000
-rem             start.bat @emri 9000 9001   -> porta e faqes 9000, porta e lidhjes 9001
+rem             start.bat @emri 9123        -> porta e faqes 9123
+rem             start.bat @emri 9123 9001   -> porta e faqes 9123, porta e lidhjes 9001
 set TTUSER=%~1
 if "%TTUSER%"=="" set TTUSER=@partiamegrada
 set PORT=%~2
-if "%PORT%"=="" set PORT=8000
+if "%PORT%"=="" set PORT=8123
 set WSPORT=%~3
-if "%WSPORT%"=="" set WSPORT=8765
+if "%WSPORT%"=="" set WSPORT=8124
 
 where py >nul 2>nul
 if %errorlevel%==0 (set PY=py) else (set PY=python)

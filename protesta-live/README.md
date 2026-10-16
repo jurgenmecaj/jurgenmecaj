@@ -46,14 +46,14 @@ Hape `index.html` në shfletues me `?demo=1` (simulim automatik), ose pa paramet
 
 ## Windows: me një klik
 Dyfisho **`start.bat`** (instalon bibliotekat, hap dritaren e lojës dhe lidhet me `@partiamegrada`).
-`start.bat @emri 9000` për një port tjetër të faqes (si 3-i opsional: `start.bat @emri 9000 9001` ndryshon edhe portën e lidhjes), `start.bat @emri` për llogari tjetër, `start.bat demo` për provë pa TikTok.
+`start.bat @emri 9123` për një port tjetër të faqes (si 3-i opsional: `start.bat @emri 9123 9124` ndryshon edhe portën e lidhjes), `start.bat @emri` për llogari tjetër, `start.bat demo` për provë pa TikTok.
 
 ## Lidhja me live-in real (Python)
 ```bash
 cd protesta-live
 pip install -r requirements.txt
 python server.py --user @llogaria_jote      # duhet të jesh LIVE
-# hap http://localhost:8000
+# hap http://localhost:8123
 ```
 `python server.py --demo` nis serverin me ngjarje të simuluara. Porte: `--http-port`, `--ws-port`.
 
@@ -66,7 +66,7 @@ pip install --no-deps TikTokLive && pip install TikTokLiveProto==0.2.2 betterpro
 ```
 
 ## Si e shfaq në TikTok LIVE
-1. **TikTok LIVE Studio / OBS**: shto *Browser Source* (ose Window Capture) me `http://localhost:8000`, madhësia **1080×1920**.
+1. **TikTok LIVE Studio / OBS**: shto *Browser Source* (ose Window Capture) me `http://localhost:8123`, madhësia **1080×1920**.
 2. Nise live-in nga LIVE Studio/OBS (TikTok kërkon kushte llogarie për transmetim nga kompjuteri).
 3. Telefoni ose kompjuteri duhet të jetë i njëjti ku vrapon `server.py`.
 

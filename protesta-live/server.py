@@ -170,17 +170,24 @@ async def main() -> None:
     ap = argparse.ArgumentParser(description="Ura TikTok LIVE -> Protesta Live")
     ap.add_argument("--user", help="@emri i llogarisë që është LIVE")
     ap.add_argument("--demo", action="store_true", help="ngjarje të simuluara, pa TikTok")
-    ap.add_argument("--ws-port", type=int, default=8765)
-    ap.add_argument("--http-port", type=int, default=8000)
+    ap.add_argument("--ws-port", type=int, default=8124)
+    ap.add_argument("--http-port", type=int, default=8123)
     args = ap.parse_args()
     if not args.user and not args.demo:
         ap.error("jep --user @llogaria ose përdor --demo")
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
-    serve_http(args.http_port)
+    try:
+        serve_http(args.http_port)
+    except OSError:
+        raise SystemExit(f"Porta {args.http_port} eshte e zene nga nje aplikacion tjeter. Provo: python server.py --user @emri --http-port 9123")
     log.info("Hap në shfletues:  http://localhost:%d", args.http_port)
 
-    async with websockets.serve(ws_handler, "0.0.0.0", args.ws_port):
+    try:
+        ws_server = await websockets.serve(ws_handler, "0.0.0.0", args.ws_port)
+    except OSError:
+        raise SystemExit(f"Porta {args.ws_port} eshte e zene. Provo: python server.py --user @emri --ws-port 9124")
+    async with ws_server:
         if args.demo:
             await demo_events()
         else:

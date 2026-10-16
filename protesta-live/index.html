@@ -28,7 +28,7 @@ const ctx = cv.getContext('2d');
 
 /* ------------------------------ konfigurim ------------------------------ */
 const CFG = {
-  wsUrl: Q.get('ws') || 'ws://localhost:8765',
+  wsUrl: Q.get('ws') || 'ws://localhost:8124',
   maxCrowd: 70,
   ambient: 10,                 // protestues "figurantë" kur nuk ka njeri
   laneTop: 1290, laneBottom: 1535,
@@ -394,7 +394,7 @@ function addPerson(name, ambient = false) {
   S.crowd.push(p); if (!ambient) S.byName.set(name, p);
   return p;
 }
-const AVBASE = location.protocol.startsWith('http') ? '' : 'http://localhost:8000';
+const AVBASE = location.protocol.startsWith('http') ? '' : 'http://localhost:8123';
 function setAvatar(p, url) {
   if (!url || p.img || p.ambient) return;
   const img = new Image(); img.onerror = () => { if (p.img === img) p.img = null; };

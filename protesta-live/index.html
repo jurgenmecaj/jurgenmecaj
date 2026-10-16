@@ -32,6 +32,7 @@ const CFG = {
   maxCrowd: 70,
   ambient: 10,                 // protestues "figurantë" kur nuk ka njeri
   laneTop: 1290, laneBottom: 1535,
+  copHitMin: Q.has('copmin') ? +Q.get('copmin') : 10, // dhurata me >= kaq 💎 rrëzojnë policinë (jo lulet)
   police: Q.has('police') ? +Q.get('police') : 100, // sekonda mes ardhjeve të policisë (0 = pa polici)
 };
 
@@ -110,6 +111,7 @@ const sfx = (() => {
     splat: gate('sp', 50, () => { noise(.16, .10, 1000); tone(220, 70, .14, .07); }),
     crack: gate('cr', 60, () => { noise(.14, .16, 3500); tone(130, 50, .2, .10, 'square'); }),
     boom: gate('bm', 150, () => { noise(.7, .2, 600); tone(100, 30, .55, .18, 'sawtooth'); }),
+    tick: gate('tk', 100, () => tone(900, 900, .07, .05, 'square')),
     siren: gate('sr', 300, () => { tone(650, 900, .35, .05, 'sawtooth'); tone(900, 650, .35, .05, 'sawtooth', .35); }),
     hiss: gate('hs', 120, () => noise(.5, .09, 2600)),
     win: gate('wn', 500, () => { [523, 659, 784, 1046].forEach((f, i) => tone(f, f * 1.01, .25, .07, 'triangle', i * .09)); }),
@@ -118,7 +120,11 @@ const sfx = (() => {
 addEventListener('pointerdown', () => sfx.whoosh());
 
 /* ------------------------------ gjendja ------------------------------ */
+function loadXp() { try { return JSON.parse(localStorage.getItem('pl_xp') || '{}'); } catch (e) { return {}; } }
+function saveXp() { try { localStorage.setItem('pl_xp', JSON.stringify(Object.fromEntries(Object.entries(S.xp).sort((a, b) => b[1] - a[1]).slice(0, 500)))); } catch (e) {} }
+const lvlOf = x => 1 + Math.floor(Math.sqrt(x / 8));
 const S = {
+  xp: loadXp(), rr: {}, challenge: null, nextChallenge: 30, lastKind: '', victories: 0, hero: null, lastCd: -1, saveT: 0,
   t: 0, crowd: [], byName: new Map(), proj: [], parts: [], floats: [], timers: [],
   queue: [], banner: null, scores: {}, prefs: {}, hits: 0, joined: 0,
   shake: 0, flash: 0, flashCol: '#ff8a00', status: 'offline', likeBudget: 0,
@@ -339,7 +345,8 @@ function addHeat(b, v) {
   if (b.cleaning > 0) return;
   b.heat = Math.min(100, b.heat + v);
   if (b.heat >= 100) {
-    b.cleaning = 2.4; b.rounds++;
+    b.cleaning = 2.4; b.rounds++; b.done = true;
+    if (BUILD.every(x => x.done)) { BUILD.forEach(x => { x.done = false; }); S.victories++; later(1.2, victory); }
     pushBanner('win', 'ZEMËRIMI 100%', `${b.label} u mbulua me ngjyra!`);
     for (let i = 0; i < 5; i++) later(i * .15, () => confetti(b.x + b.w / 2 + rnd(-90, 90), b.y + rnd(0, 120), 22));
     sfx.win();
@@ -419,6 +426,7 @@ function drawPerson(p, t) {
   const jump = p.jump > 0 ? -Math.sin((1 - p.jump) * Math.PI) * 42 : 0;
   ctx.save(); ctx.translate(p.x, p.y); ctx.scale(s, s);
   ctx.fillStyle = 'rgba(0,0,0,.38)'; ctx.beginPath(); ctx.ellipse(0, 3, 26, 8, 0, 0, 7); ctx.fill();
+  if (p.fall > 0) ctx.rotate(p.fall * 1.5 * (p.fallDir || 1));
   ctx.translate(0, bounce + jump); ctx.lineJoin = 'round';
   const sw = walking ? Math.sin(ph) * 11 : 0, throwing = p.throwT > 0;
   // këmbë + atlete
@@ -439,6 +447,7 @@ function drawPerson(p, t) {
   ctx.strokeStyle = 'rgba(0,0,0,.28)'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(0, -66); ctx.lineTo(0, -24); ctx.stroke(); // zinxhir
   ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.fillRect(-21, -41, 42, 4); // vijë reflektuese
   ctx.fillStyle = shade(p.color, -.3); poly(ctx, [[-10, -74], [10, -74], [0, -62]]); ctx.fill(); // jakë
+  if (p.tintT > 0 && p.tint) { ctx.fillStyle = p.tint; ctx.beginPath(); ctx.arc(-4, -52, 13, 0, 7); ctx.arc(9, -38, 8, 0, 7); ctx.arc(-10, -34, 6, 0, 7); ctx.fill(); }
   // krahu i djathtë
   let hx, hy;
   if (throwing) { const k = 1 - p.throwT / .35, a = -2.5 + k * 3.1; hx = 18 + Math.cos(a) * 29; hy = -62 + Math.sin(a) * 29; }
@@ -505,6 +514,11 @@ function drawPerson(p, t) {
     ctx.fillStyle = 'rgba(12,10,30,.82)'; rr(ctx, -nw / 2, top - 15, nw, 30, 15); ctx.fill();
     ctx.strokeStyle = p.color; ctx.lineWidth = 2.5; ctx.stroke();
     ctx.fillStyle = '#fff'; ctx.fillText(nm, 0, top + 1);
+    const lv = lvlOf(S.xp[p.name] || 0);
+    if (lv >= 2) { // shenja e nivelit
+      ctx.fillStyle = '#ffd60a'; ctx.strokeStyle = OUT; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(-nw / 2 + 2, top, 13, 0, 7); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#1b1530'; ctx.font = '900 14px "Segoe UI",Arial,sans-serif'; ctx.fillText(lv, -nw / 2 + 2, top + 1);
+    }
     if (p.name === S.topName && p.score > 0) { // kurora e lojtarit #1
       ctx.strokeStyle = '#ffd60a'; ctx.lineWidth = 3; rr(ctx, -nw / 2, top - 15, nw, 30, 15); ctx.stroke();
       const cy = top - 18; ctx.fillStyle = '#ffd60a'; ctx.strokeStyle = OUT; ctx.lineWidth = 2.5;
@@ -523,7 +537,20 @@ function drawPerson(p, t) {
 }
 
 /* ------------------------------ gjuajtjet ------------------------------ */
-function chooseTarget(user) { return (user && bById(S.prefs[user])) || pick(BUILD); }
+function chooseTarget(user) {
+  const pref = bById(S.prefs[user]); if (pref) return pref;
+  S.rr[user] = ((S.rr[user] ?? rint(0, BUILD.length - 1)) + 1) % BUILD.length; // pa zgjedhje: kalon radhazi nëpër të tria godinat
+  return BUILD[S.rr[user]];
+}
+function addXp(name, v) {
+  const o = S.xp[name] || 0, n = o + v; S.xp[name] = n;
+  if (lvlOf(n) > lvlOf(o)) {
+    const p = S.byName.get(name);
+    if (p) floatText(p.x, p.y - 190 * scaleAt(p.y), `NIVELI ${lvlOf(n)}!`, '#ffd60a');
+    if (lvlOf(n) >= 4) pushBanner('gift', `⭐ NIVEL I RI: ${lvlOf(n)}`, '@' + name, p && p.img);
+    sfx.join();
+  }
+}
 function launch(p, type, b, o = {}) {
   if (S.proj.length > 140) return;
   const sc = scaleAt(p.y), x0 = p.x + 22 * sc, y0 = p.y - 88 * sc;
@@ -535,6 +562,7 @@ function launch(p, type, b, o = {}) {
 }
 function impact(q) {
   if (q.type === 'gas') return gasImpact(q);
+  if (q.cop) return copImpact(q);
   const b = q.b, lx = q.x1 - b.x, ly = q.y1 - b.y, c = b.sx;
   S.hits++; b.dirty = true; S.combo = (S.comboT > 0 ? S.combo : 0) + 1; S.comboT = 3; S.comboPop = 1;
   switch (q.type) {
@@ -560,17 +588,49 @@ function spawnCop() {
   const side = Math.random() < .5 ? -1 : 1, sp = { x: rnd(110, W - 110), y: rnd(CFG.laneTop + 10, CFG.laneBottom + 20) };
   const c = { cop: true, ambient: true, name: '', x: side < 0 ? -80 : W + 80, y: sp.y, tx: sp.x, ty: sp.y, walking: true, state: 'enter', leaving: false,
     color: '#1d3557', skin: pick(SKINS), hair: '#111', hairStyle: 0, bob: rnd(0, 7), sign: null, throwT: 0, hype: .5, jump: 0, say: '', sayT: 0, score: 0,
-    mouthT: rnd(0, 2), nextAct: S.t + rnd(1.5, 3), target: null, img: null, dazed: 0 };
+    mouthT: rnd(0, 2), nextAct: S.t + rnd(1.5, 3), target: null, img: null, dazed: 0, hp: 2, down: 0, stun: 0, fall: 0 };
   S.cops.push(c); return c;
 }
 function startRaid() {
   if (S.raid) return;
   const n = clamp(Math.round(freePeople().length / 5), 5, 9);
   S.raid = { t: 0, dur: 16, arrests: 0, max: clamp(Math.round(freePeople().length * .7), 6, 16) };
-  pushBanner('raid', '🚨 POLICIA ARRIN NË SHESH!', 'Protestuesit po largohen…');
+  pushBanner('raid', '🚨 POLICIA ARRIN NË SHESH!', `Dhuratat 💎${CFG.copHitMin}+ i rrëzojnë policët!`);
   for (let i = 0; i < 4; i++) later(i * .75, () => sfx.siren());
   for (let i = 0; i < n; i++) later(i * .25, spawnCop);
   S.shake = Math.max(S.shake, .3);
+}
+const copsActive = () => S.raid && S.raid.t < S.raid.dur && S.cops.length > 0;
+function launchAtCop(p, type, cop) {
+  const sc = scaleAt(p.y), x0 = p.x + 22 * sc, y0 = p.y - 88 * sc, x1 = cop.x, y1 = cop.y - 72 * scaleAt(cop.y);
+  S.proj.push({ type, x: x0, y: y0, x0, y0, x1, y1, t: 0, dur: clamp(Math.hypot(x1 - x0, y1 - y0) / 850, .55, 1.1), arc: rnd(120, 240), rot: rnd(0, 6), vr: rnd(-9, 9), col: pick(INK), b: null, cop, user: p.name });
+  p.throwT = .35; p.hype = 1; p.nextIdle = S.t + rnd(3, 8); sfx.whoosh();
+}
+function releasePerson(c) {
+  const p = c.target; if (!p) return;
+  const sp = freeSpot(); p.arrested = false; p.targeted = false; p.tx = sp.x; p.ty = sp.y; p.walking = true; p.hype = 1; p.jump = 1; p.say = 'LIRË!'; p.sayT = 2.5;
+  c.target = null; if (S.raid) S.raid.freed = (S.raid.freed || 0) + 1;
+  if (!p.ambient) pushBanner('join', '✊ U ÇLIRUA NGA POLICIA:', '@' + p.name, p.img);
+}
+function knock(c, sec) {
+  c.hp = (c.hp ?? 2) - 1; c.down = Math.max(c.down || 0, sec); c.stun = 0; c.dazed = sec; c.fallDir = Math.random() < .5 ? 1 : -1;
+  if (c.target) { if (c.state === 'escort') releasePerson(c); else { c.target.targeted = false; c.target = null; } }
+  floatText(c.x, c.y - 150, pick(['KAPLLE!', 'BUM!', 'OUUU!']), '#ffd60a'); S.shake = Math.max(S.shake, .25); sfx.crack();
+}
+function copImpact(q) {
+  const c = q.cop; if (!S.cops.includes(c)) return;
+  S.hits++; S.combo = (S.comboT > 0 ? S.combo : 0) + 1; S.comboT = 3; S.comboPop = 1;
+  if (q.type === 'paint' || q.type === 'bomb') {
+    c.tint = q.col; c.tintT = 8; c.stun = Math.max(c.stun || 0, 2); c.target && c.state !== 'escort' && (c.target.targeted = false, c.target = null, c.state = 'idle');
+    burst(q.x1, q.y1, 24, INK, 380, { g: 900, size: 9 }); floatText(q.x1, q.y1 - 30, 'SPLAT!', q.col); sfx.splat();
+  } else {
+    knock(c, q.type === 'molotov' ? 7 : 5);
+    burst(q.x1, q.y1, 22, q.type === 'molotov' ? ['#ffd23f', '#ff8a00', '#ff3d00'] : ['#8a8a96', '#b8b8c4'], 380, { g: 900, size: 7 });
+  }
+}
+function routCops() {
+  for (const c of S.cops) { c.hp = 0; knock(c, 5); }
+  pushBanner('win', '🏆 FINALE! POLICIA U THYE', 'Të gjithë policët po ikin!');
 }
 function copThrow(c, target) {
   const sc = scaleAt(c.y), x0 = c.x + 22 * sc, y0 = c.y - 88 * sc, x1 = target.x + rnd(-25, 25), y1 = target.y - 20;
@@ -594,7 +654,18 @@ function updatePolice(dt) {
   for (const p of S.crowd) p.dazed = Math.max(0, (p.dazed || 0) - dt);
   for (let i = S.cops.length - 1; i >= 0; i--) {
     const c = S.cops[i];
-    c.throwT = Math.max(0, c.throwT - dt); c.hype = Math.max(.25, c.hype - dt * .5);
+    c.throwT = Math.max(0, c.throwT - dt); c.hype = Math.max(.25, c.hype - dt * .5); if (c.tintT > 0) c.tintT -= dt;
+    if (c.down > 0) {
+      c.down -= dt; c.walking = false; c.fall = Math.min(1, (c.fall || 0) + dt * 6); c.dazed = c.down;
+      if (c.down <= 0) {
+        c.dazed = 0;
+        if (c.hp <= 0) { c.state = 'leave'; c.tx = c.x < W / 2 ? -120 : W + 120; if (S.raid && !c.routed) { c.routed = true; S.raid.routed = (S.raid.routed || 0) + 1; } floatText(c.x, c.y - 150, 'U TËRHOQ!', '#4cc9f0'); }
+        else c.state = 'idle';
+      }
+      continue;
+    }
+    c.fall = Math.max(0, (c.fall || 0) - dt * 3);
+    if (c.stun > 0) { c.stun -= dt; c.walking = false; c.dazed = c.stun; continue; }
     const go = (tx, ty, speed) => { const dx = tx - c.x, dy = ty - c.y, d = Math.hypot(dx, dy), st = speed * dt; c.walking = d > st; if (d <= st) { c.x = tx; c.y = ty; } else { c.x += dx / d * st; c.y += dy / d * st; } return d <= st; };
     if (c.state === 'enter') { if (go(c.tx, c.ty, 230)) c.state = 'idle'; }
     else if (c.state === 'idle') {
@@ -634,9 +705,10 @@ function updatePolice(dt) {
       if (go(c.tx, c.y, 230)) S.cops.splice(i, 1);
     }
   }
-  if (raid && !active && S.cops.length === 0) {
+  if (raid && S.cops.length === 0 && (!active || raid.t > 4)) {
     S.raid = null; S.nextRaid = S.t + CFG.police * rnd(.8, 1.2);
     for (const p of S.crowd) p.targeted = false;
+    if (raid.freed || raid.routed) pushBanner('win', '🏆 POLICIA U THYE!', `${raid.freed || 0} të çliruar · ${raid.routed || 0} policë u tërhoqën`);
     if (S.detained.length) pushBanner('raid', `🚔 ${S.detained.length} PROTESTUES TË NDALUAR`, 'Jep LIKE ❤️ që t\'i kthesh në shesh!');
     else pushBanner('join', 'POLICIA U LARGUA', 'Askush nuk u ndalua. Protesta vazhdon!');
   }
@@ -645,6 +717,34 @@ function revive(i) {
   const d = S.detained.splice(i, 1)[0]; if (!d) return;
   const p = addPerson(d.name); Object.assign(p, { color: d.color, skin: d.skin, hair: d.hair, hairStyle: d.hairStyle, sign: d.sign, img: d.img, score: S.scores[d.name] || 0 });
   p.jump = 1; pushBanner('join', '✊ U KTHYE FALË LIKE-VE:', '@' + d.name, p.img); sfx.join();
+}
+function celebrate(n) {
+  for (let i = 0; i < n; i++) later(i * .3, () => firework(rnd(120, 960), rnd(380, 760)));
+  for (let i = 0; i < 4; i++) later(i * .4, () => confetti(rnd(100, 980), 330, 26));
+  S.crowd.forEach((p, i) => { if (!p.leaving && !p.arrested) later(i * .02, () => { p.jump = 1; p.hype = 1; }); });
+  sfx.win();
+}
+function victory() {
+  pushBanner('win', '🏆 FITORE E PËRBASHKËT!', 'Të tre godinat u mbuluan me ngjyra!'); celebrate(9); S.shake = Math.max(S.shake, .4);
+}
+function startChallenge(kind) {
+  const real = S.crowd.filter(p => !p.ambient && !p.leaving).length;
+  const k = kind || pick(['poll', 'like', 'chat'].filter(x => x !== S.lastKind)); S.lastKind = k;
+  const c = { kind: k, t: 0, dur: 25, n: 0, goal: 0, votes: [0, 0, 0], voted: new Set() };
+  if (k === 'like') { c.goal = clamp(15 + real * 3, 20, 80); c.title = `❤️ ${c.goal} LIKE në 25 sekonda → fishekzjarre!`; }
+  if (k === 'chat') { c.goal = clamp(6 + real, 8, 40); c.title = `📣 Shkruaj MJAFT në chat × ${c.goal}`; }
+  if (k === 'poll') { c.dur = 18; c.title = '🗳️ ZGJIDH: kush sulmohet nga të gjithë? (shkruaj 1, 2 ose 3)'; }
+  S.challenge = c; sfx.join();
+}
+function endChallenge() {
+  const c = S.challenge; S.challenge = null; S.nextChallenge = S.t + rnd(40, 70);
+  if (c.kind === 'poll') {
+    const mx = Math.max(...c.votes), idx = c.votes.map((v, i) => v === mx ? i : -1).filter(i => i >= 0), b = BUILD[pick(idx)];
+    pushBanner('win', '💥 SULM I PËRBASHKËT KUNDËR:', b.label);
+    freePeople().slice(0, 26).forEach((p, i) => later(i * .1, () => launch(p, i % 3 === 0 ? 'bomb' : 'paint', b)));
+    S.shake = Math.max(S.shake, .3); sfx.boom();
+  } else if (c.n >= c.goal) { pushBanner('win', '⚡ SFIDA U KRYE!', 'Fishekzjarre për të gjithë!'); celebrate(7); }
+  else pushBanner('join', 'SFIDA NUK U KRYE', 'Provojmë përsëri së shpejti!');
 }
 function finale(user) {
   pushBanner('gift', `🎆 FINALE nga @${user}`, 'Të gjithë gjuajnë bojë!');
@@ -661,10 +761,10 @@ function finale(user) {
 function pushBanner(kind, l1, l2, img) { S.queue.push({ kind, l1, l2, img }); if (S.queue.length > 14) S.queue.splice(1, 1); }
 function onJoin(user, avatar) {
   if (!user || isDetained(user)) return;
-  const isNew = !S.byName.has(user);
+  const isNew = !S.byName.has(user), back = isNew && (S.xp[user] || 0) > 0;
   const p = addPerson(user); setAvatar(p, avatar); p.jump = 1;
-  if (isNew) S.joined++;
-  pushBanner('join', 'SAPO IU BASHKUA PROTESTËS:', '@' + user, p.img);
+  if (isNew) { S.joined++; if (!back) addXp(user, 5); }
+  pushBanner('join', back ? `MIRËSEARDHE PËRSËRI · NIVELI ${lvlOf(S.xp[user])}:` : 'SAPO IU BASHKUA PROTESTËS:', '@' + user, p.img);
   sfx.join();
 }
 function onGift(user, name, diamonds, count, avatar) {
@@ -672,13 +772,24 @@ function onGift(user, name, diamonds, count, avatar) {
   const di = S.detained.findIndex(d => d.name === user); if (di >= 0) revive(di); // dhurata e kthen në shesh
   const tier = tierOf(diamonds), p = getPerson(user, avatar);
   S.scores[user] = (S.scores[user] || 0) + diamonds * count; p.score = S.scores[user]; p.jump = 1;
-  if (tier.key === 'finale') return finale(user);
-  const b = chooseTarget(user), n = Math.min(count, 10);
-  pushBanner('gift', `${tier.icon} ${tier.label.toUpperCase()}${count > 1 ? ' ×' + count : ''}${name ? ' · ' + name : ''}`, `@${user} → ${b.label}`, p.img);
-  for (let i = 0; i < n; i++) later(i * .28, () => launch(p, tier.key, b));
+  addXp(user, diamonds * count);
+  const label = `${tier.icon} ${tier.label.toUpperCase()}${count > 1 ? ' ×' + count : ''}${name ? ' · ' + name : ''}`;
+  if (diamonds * count >= 100) S.hero = { t: 0, dur: 3.2, name: user, img: p.img, line: label };
+  if (tier.key === 'finale') { if (copsActive()) routCops(); return finale(user); }
+  const n = Math.min(count, 10);
+  if (copsActive() && diamonds >= CFG.copHitMin) { // dhuratat e mëdha godasin policinë (jo lulet)
+    pushBanner('gift', label, `@${user} → 🚔 POLICIA`, p.img);
+    for (let i = 0; i < n; i++) later(i * .28, () => { const up = S.cops.filter(c => !(c.down > 0)), c = pick(up.length ? up : S.cops); if (c) launchAtCop(p, tier.key, c); });
+    return;
+  }
+  const fixed = bById(S.prefs[user]), targets = Array.from({ length: n }, () => chooseTarget(user));
+  pushBanner('gift', label, `@${user} → ${fixed ? fixed.label : n > 1 ? 'TË TRE GODINAT' : targets[0].label}`, p.img);
+  for (let i = 0; i < n; i++) later(i * .28, () => launch(p, tier.key, targets[i]));
 }
 function onLike(user, count, avatar) {
   const di = S.detained.findIndex(d => d.name === user);
+  if (S.challenge && S.challenge.kind === 'like') S.challenge.n += Math.max(1, Math.min(count | 0, 10));
+  addXp(user, 1);
   if (di >= 0) return revive(di);                          // like nga i ndaluari → kthehet vetë
   if (S.detained.length && ++S.likeCnt % 2 === 0) revive(0); // like të tjera kthejnë të ndaluarit një nga një
   S.likeBudget = Math.min(S.likeBudget + Math.min(count || 1, 5), 10);
@@ -689,7 +800,11 @@ function onLike(user, count, avatar) {
 function onChat(user, text, avatar) {
   if (isDetained(user)) return;
   const p = getPerson(user, avatar), low = (text || '').toLowerCase();
-  const hit = /bashki/.test(low) ? 'bashkia' : /kryemin/.test(low) ? 'kryeministria' : /arsim/.test(low) ? 'arsimi' : null;
+  const num = /^\s*([123])\s*[.!]?\s*$/.exec(low), ch = S.challenge;
+  const hit = num ? BUILD[num[1] - 1].id : /bashki/.test(low) ? 'bashkia' : /kryemin/.test(low) ? 'kryeministria' : /arsim/.test(low) ? 'arsimi' : null;
+  addXp(user, 1);
+  if (ch && ch.kind === 'chat' && /mjaft/.test(low)) ch.n++;
+  if (hit && ch && ch.kind === 'poll' && !ch.voted.has(user)) { ch.voted.add(user); ch.votes[BUILD.findIndex(b => b.id === hit)]++; }
   if (hit) { S.prefs[user] = hit; p.say = '🎯 ' + bById(hit).label; } else p.say = (text || '').slice(0, 34);
   p.sayT = 3.2;
 }
@@ -702,7 +817,7 @@ function handle(m) {
     case 'police': return startRaid();
   }
 }
-window.__game = { handle, S, demoAvatar, startRaid }; // për teste / integrime të tjera
+window.__game = { handle, S, demoAvatar, startRaid, startChallenge, endChallenge }; // për teste / integrime të tjera
 
 /* ------------------------------ lidhja me TikTok (WebSocket) ------------------------------ */
 (function connect() {
@@ -729,7 +844,7 @@ if (Q.has('demo')) {
     if (r < .42) { const u = fake(); handle({ type: 'join', user: u, avatar: demoAvatar(u) }); }
     else if (r < .75) handle({ type: 'gift', user: S.crowd.length && Math.random() < .6 ? pick(S.crowd.filter(p => !p.ambient).concat([{ name: fake() }])).name : fake(), gift: 'Dhuratë', diamonds: pick(GIFT_D), count: rint(1, 3) });
     else if (r < .9) handle({ type: 'like', user: fake(), count: rint(1, 5) });
-    else handle({ type: 'chat', user: fake(), text: pick(['!bashkia', '!arsimi', '!kryeministria', 'MJAFT!', 'Ora ka ardhur', 'Së bashku!']) });
+    else handle({ type: 'chat', user: fake(), text: pick(['!bashkia', '1', '2', '3', 'MJAFT!', 'mjaft', 'Ora ka ardhur', 'Së bashku!']) });
     setTimeout(loop, rnd(350, 1500));
   })();
 }
@@ -739,6 +854,7 @@ addEventListener('keydown', e => {
   else if (k === 'l') handle({ type: 'like', user: fake(), count: 3 });
   else if (k === 'm') sfx.toggle();
   else if (k === 'p') startRaid();
+  else if (k === 'c') startChallenge();
   else if ('12345'.includes(k) && k) handle({ type: 'gift', user: fake(), gift: 'Test', diamonds: [1, 10, 30, 100, 500][+k - 1], count: 1 });
 });
 
@@ -751,6 +867,12 @@ function update(dt) {
   for (let i = S.timers.length - 1; i >= 0; i--) if (S.timers[i].at <= S.t) { const f = S.timers[i].fn; S.timers.splice(i, 1); f(); }
   S.likeBudget = Math.min(10, S.likeBudget + dt * 6);
   updatePolice(dt);
+  if (!S.raid && CFG.police > 0) { const cd = Math.ceil(S.nextRaid - S.t); if (cd <= 5 && cd > 0 && cd !== S.lastCd) { S.lastCd = cd; sfx.tick(); } }
+  const ch = S.challenge;
+  if (ch) { ch.t += dt; if ((ch.goal && ch.n >= ch.goal) || ch.t >= ch.dur) endChallenge(); }
+  else if (!S.raid && S.t > S.nextChallenge && S.crowd.some(p => !p.ambient && !p.leaving)) startChallenge();
+  if (S.hero) { S.hero.t += dt; if (S.hero.t > S.hero.dur) S.hero = null; }
+  S.saveT += dt; if (S.saveT > 10) { S.saveT = 0; saveXp(); }
   S.comboT = Math.max(0, S.comboT - dt); S.comboPop = Math.max(0, S.comboPop - dt * 3);
   const tp = Object.entries(S.scores).sort((a, b) => b[1] - a[1])[0]; S.topName = tp ? tp[0] : '';
   if (S.chant) { S.chant.t += dt; if (S.chant.t > 1.8) S.chant = null; }
@@ -777,6 +899,7 @@ function update(dt) {
   for (let i = S.proj.length - 1; i >= 0; i--) {
     const q = S.proj[i]; q.t += dt / q.dur; q.rot += q.vr * dt;
     const t = Math.min(q.t, 1);
+    if (q.cop) { q.x1 = q.cop.x; q.y1 = q.cop.y - 72 * scaleAt(q.cop.y); }
     q.x = lerp(q.x0, q.x1, t); q.y = lerp(q.y0, q.y1, t) - Math.sin(t * Math.PI) * q.arc;
     if (q.type === 'gas' && Math.random() < .6) P({ x: q.x, y: q.y, vx: rnd(-20, 20), vy: rnd(-20, 10), life: rnd(.6, 1), size: rnd(8, 14), grow: 16, col: '#d9deef', alpha: .35, type: 'smoke' });
     else if (q.type === 'molotov' && Math.random() < .8) P({ x: q.x, y: q.y, vx: rnd(-30, 30), vy: rnd(-60, 0), life: rnd(.25, .5), size: rnd(8, 15), col: '#ff8a00', type: 'fire' });
@@ -822,6 +945,53 @@ function drawBeams(t) {
     ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(x0, y0);
     ctx.lineTo(x0 + Math.cos(a - sp) * L, y0 + Math.sin(a - sp) * L); ctx.lineTo(x0 + Math.cos(a + sp) * L, y0 + Math.sin(a + sp) * L); ctx.closePath(); ctx.fill();
   }
+  ctx.restore();
+}
+function drawChallenge() {
+  const c = S.challenge; if (!c) return;
+  const w = 860, h = c.kind === 'poll' ? 98 : 80, x = (W - w) / 2, y = 404, left = Math.max(0, Math.ceil(c.dur - c.t));
+  ctx.save(); ctx.fillStyle = 'rgba(8,10,28,.88)'; rr(ctx, x, y, w, h, 20); ctx.fill(); ctx.strokeStyle = '#7cf0ff'; ctx.lineWidth = 3; ctx.stroke();
+  ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; fitText(ctx, c.title, w - 130, 26, '900'); ctx.fillStyle = '#fff'; ctx.fillText(c.title, x + 24, y + 28);
+  ctx.textAlign = 'right'; ctx.font = '900 28px "Segoe UI",Arial,sans-serif'; ctx.fillStyle = left <= 5 ? '#ff4d6d' : '#ffd60a'; ctx.fillText(`0:${String(left).padStart(2, '0')}`, x + w - 24, y + 28);
+  ctx.textAlign = 'center';
+  if (c.kind !== 'poll') {
+    const bw = w - 48, f = clamp(c.n / c.goal, 0, 1);
+    ctx.fillStyle = 'rgba(255,255,255,.15)'; rr(ctx, x + 24, y + 50, bw, 20, 10); ctx.fill();
+    const g = ctx.createLinearGradient(x, 0, x + w, 0); g.addColorStop(0, '#7cf0ff'); g.addColorStop(1, '#b84dff'); ctx.fillStyle = g; rr(ctx, x + 24, y + 50, Math.max(20, bw * f), 20, 10); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.font = '800 15px "Segoe UI",Arial,sans-serif'; ctx.fillText(`${Math.min(c.n, c.goal)} / ${c.goal}`, x + w / 2, y + 61);
+  } else {
+    const bw = (w - 48 - 24) / 3, mx = Math.max(1, ...c.votes), names = ['1  BASHKIA', '2  KRYEMINISTRIA', '3  ARSIMI'];
+    for (let i = 0; i < 3; i++) {
+      const bx = x + 24 + i * (bw + 12);
+      ctx.fillStyle = 'rgba(255,255,255,.15)'; rr(ctx, bx, y + 50, bw, 34, 10); ctx.fill();
+      ctx.fillStyle = ['#ff8a00', '#b84dff', '#08d9d6'][i]; rr(ctx, bx, y + 50, Math.max(14, bw * c.votes[i] / mx), 34, 10); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.font = '800 17px "Segoe UI",Arial,sans-serif'; ctx.fillText(`${names[i]} · ${c.votes[i]}`, bx + bw / 2, y + 68);
+    }
+  }
+  ctx.restore();
+}
+function drawHero() {
+  const h = S.hero; if (!h) return;
+  const k = h.t / h.dur, a = clamp(k < .12 ? k / .12 : k > .8 ? (1 - k) / .2 : 1, 0, 1), sc = .85 + .15 * Math.min(1, k / .12);
+  ctx.save(); ctx.translate(W / 2, 800); ctx.scale(sc, sc); ctx.globalAlpha = a;
+  ctx.shadowColor = '#ffb703'; ctx.shadowBlur = 40; ctx.fillStyle = 'rgba(12,10,32,.92)'; rr(ctx, -400, -105, 800, 210, 30); ctx.fill(); ctx.shadowBlur = 0;
+  ctx.strokeStyle = '#ffd60a'; ctx.lineWidth = 5; ctx.stroke();
+  if (avReady(h.img)) { ctx.save(); ctx.beginPath(); ctx.arc(-290, 0, 78, 0, 7); ctx.clip(); ctx.drawImage(h.img, -368, -78, 156, 156); ctx.restore(); }
+  else { ctx.fillStyle = '#7a1f3a'; ctx.beginPath(); ctx.arc(-290, 0, 78, 0, 7); ctx.fill(); ctx.font = '80px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('🦸', -290, 4); }
+  ctx.strokeStyle = '#ffd60a'; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(-290, 0, 80, 0, 7); ctx.stroke();
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.font = '900 26px "Segoe UI",Arial,sans-serif'; ctx.fillStyle = '#ffd60a'; ctx.fillText('★ DHURATË E MADHE · HERO I PROTESTËS', -190, -42);
+  fitText(ctx, '@' + h.name, 540, 56, '900'); ctx.fillStyle = '#fff'; ctx.fillText('@' + h.name, -190, 22);
+  fitText(ctx, h.line, 540, 34, '800'); ctx.fillStyle = '#ff9f1c'; ctx.fillText(h.line, -190, 72);
+  ctx.restore();
+}
+function drawCountdown() {
+  if (S.raid || CFG.police <= 0) return;
+  const left = S.nextRaid - S.t; if (left > 10 || left <= 0) return;
+  const frac = left % 1, pulse = 1 + (1 - frac) * .18;
+  ctx.save(); ctx.translate(W / 2, 820); ctx.globalAlpha = .9; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = '900 44px Impact,"Arial Black",sans-serif'; outlined(ctx, '🚔 POLICIA VJEN PËR', 0, -110, '#fff', '#1b1530', 9);
+  ctx.scale(pulse, pulse); ctx.font = '900 190px Impact,"Arial Black",sans-serif'; outlined(ctx, String(Math.ceil(left)), 0, 0, '#ff4d6d', '#1b1530', 16);
   ctx.restore();
 }
 function drawCombo() {
@@ -874,12 +1044,12 @@ function drawProj(q) {
 }
 function drawLabels() {
   for (const b of BUILD) {
-    const cx = b.x + b.w / 2, y = b.y - 62;
+    const cx = b.x + b.w / 2, y = Math.max(b.y - 62, 548), lt = (BUILD.indexOf(b) + 1) + '  ' + b.label + (b.done ? '  ✔' : '');
     ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-    fitText(ctx, b.label, 290, 30, '900'); const tw = ctx.measureText(b.label).width + 36;
+    fitText(ctx, lt, 310, 30, '900'); const tw = ctx.measureText(lt).width + 36;
     ctx.fillStyle = 'rgba(8,10,28,.82)'; rr(ctx, cx - tw / 2, y - 34, tw, 44, 12); ctx.fill();
     ctx.strokeStyle = 'rgba(255,255,255,.25)'; ctx.lineWidth = 2; ctx.stroke();
-    ctx.fillStyle = '#fff'; ctx.fillText(b.label, cx, y);
+    ctx.fillStyle = '#fff'; ctx.fillText(lt, cx, y);
     const bw = 230, bx = cx - bw / 2, by = y + 18;
     ctx.fillStyle = 'rgba(8,10,28,.8)'; rr(ctx, bx - 3, by - 3, bw + 6, 22, 11); ctx.fill();
     const g = ctx.createLinearGradient(bx, 0, bx + bw, 0); g.addColorStop(0, '#2ecc71'); g.addColorStop(.55, '#f1c40f'); g.addColorStop(1, '#e63946');
@@ -931,7 +1101,10 @@ function drawHUD(t) {
   ctx.strokeStyle = '#111'; ctx.lineWidth = 3; ctx.stroke();
   ctx.fillStyle = '#111'; ctx.textBaseline = 'middle'; ctx.fillText(dt, W / 2, 259);
   drawCombo();
+  drawChallenge();
   drawLabels();
+  drawHero();
+  drawCountdown();
   drawBanner();
   // statistika + renditja
   const real = S.crowd.filter(p => !p.ambient && !p.leaving).length;
@@ -939,7 +1112,8 @@ function drawHUD(t) {
   ctx.fillStyle = 'rgba(8,10,28,.78)'; rr(ctx, 40, 1590, W - 80, 84, 18); ctx.fill();
   ctx.strokeStyle = 'rgba(255,255,255,.2)'; ctx.lineWidth = 2; ctx.stroke();
   ctx.textBaseline = 'middle'; ctx.font = '800 25px "Segoe UI",Arial,sans-serif'; ctx.fillStyle = '#fff';
-  ctx.fillText(`👥 ${real} protestues   ·   🎯 ${S.hits} goditje   ·   ✊ ${S.joined} të bashkuar`, W / 2, 1615);
+  const cdTxt = CFG.police > 0 ? (S.raid ? '🚔 NË SHESH!' : (() => { const l = Math.max(0, Math.ceil(S.nextRaid - S.t)); return `🚔 ${Math.floor(l / 60)}:${String(l % 60).padStart(2, '0')}`; })()) : '';
+  ctx.fillText(`👥 ${real} protestues  ·  🎯 ${S.hits} goditje  ·  🏆 ${S.victories} fitore${cdTxt ? '  ·  ' + cdTxt : ''}`, W / 2, 1615);
   const medals = ['🥇', '🥈', '🥉'];
   const topTxt = top.length ? top.map(([n, s], i) => `${medals[i]} @${n.length > 12 ? n.slice(0, 11) + '…' : n} ${s}`).join('   ') : '🏆 Dërgo një dhuratë për të hyrë në renditje!';
   fitText(ctx, topTxt, W - 130, 24, '700'); ctx.fillStyle = '#ffd60a'; ctx.fillText(topTxt, W / 2, 1651);
@@ -954,8 +1128,8 @@ function drawHUD(t) {
     ctx.font = '700 13px "Segoe UI",Arial,sans-serif'; ctx.fillStyle = '#ffd60a'; ctx.fillText(`💎 ${tr.min}+`, x + lw / 2, 1750);
   });
   ctx.font = '700 22px "Segoe UI",Arial,sans-serif'; ctx.fillStyle = 'rgba(255,255,255,.9)';
-  outlined(ctx, 'Shkruaj në chat:  !bashkia   !kryeministria   !arsimi   për të zgjedhur objektivin', W / 2, 1782, '#fff', 'rgba(0,0,0,.8)', 4);
-  outlined(ctx, '🚔 Policia vjen herë pas here — jep ❤️ LIKE që t\'i kthesh protestuesit!', W / 2, 1814, '#ffd60a', 'rgba(0,0,0,.8)', 4);
+  outlined(ctx, 'Shkruaj në chat:  1 = Bashkia   2 = Kryeministria   3 = Arsimi  (zgjedh godinën)', W / 2, 1782, '#fff', 'rgba(0,0,0,.8)', 4);
+  outlined(ctx, `🚔 LIKE kthen të ndaluarit  ·  dhuratë 💎${CFG.copHitMin}+ e rrëzon policinë!`, W / 2, 1814, '#ffd60a', 'rgba(0,0,0,.8)', 4);
   if (S.detained.length) {
     const nm = S.detained.slice(0, 3).map(d => '@' + (d.name.length > 9 ? d.name.slice(0, 8) + '…' : d.name)).join(' ') + (S.detained.length > 3 ? ` +${S.detained.length - 3}` : '');
     const txt = `🚔 TË NDALUAR: ${S.detained.length}  ·  ${nm}  ·  LIKE ❤️ = KTHEHEN`;

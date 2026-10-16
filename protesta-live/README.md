@@ -33,10 +33,23 @@ Ka edhe renditje (top 3 gjuajtësit), statistika dhe zë (mund ta çosh me `?mut
 - 📣 Çdo ~25 sekonda turma thërret **MJAFT! / DREJTËSI! / ARSIM PËR TË GJITHË!** dhe kërcen
 - 🔦 Drita kërkuese në qiell, godinat me pamje nate, shkëlqim i kuq kur zemërimi kalon 50%
 
+## Më shumë për t'i mbajtur shikuesit
+- **Secili godet secilën godinë**: shkruaj `1`, `2` ose `3` në chat për të zgjedhur godinën (ose `!bashkia` etj.). Pa zgjedhje, çdo shikues
+  gjuan radhazi në të tria godinat (jo vetëm random). Dhurata me shumë copë shpërndahet nëpër të tria.
+- **Nivele** (⭐ pranë emrit): fitohen me dhurata, like dhe komente; ruhen edhe kur shikuesi kthehet ("MIRËSEARDHE PËRSËRI · NIVELI n").
+- **Sfida çdo 40–70 s**: *Sondazh* (shkruaj 1/2/3 → të gjithë sulmojnë godinën fituese), *Like* (X like në 25 s) ose *Chat* (shkruaj MJAFT × X). Sukses = fishekzjarre.
+- **FITORE E PËRBASHKËT** kur të tre godinat mbulohen plotësisht; numëruesi 🏆 në ekran.
+- **Numërim mbrapsht për policinë** (10…1 me tik) dhe kohëmatës në shiritin e poshtëm.
+- **Karta e HERO-it** në mes të ekranit për dhurata të mëdha (💎100+ në total).
+
 ## 🚔 Policia (animacion satirik)
 Rreth çdo 100 sekonda vjen policia me sirenë: hedh gaz tymi, i kap protestuesit dhe i largon nga skena (deri 16 për raund).
 Të ndaluarit shfaqen në një shirit të kuq/blu. **LIKE i kthen**: kur një i ndaluar jep like kthehet vetë,
 ndërsa like nga të tjerët kthejnë të ndaluarit një nga një. Një dhuratë e kthen gjithashtu.
+
+**Dhuratat godasin policinë** (vetëm gjatë ardhjes së saj dhe vetëm 💎10+, jo lulet; ndryshon me `?copmin=20`):
+bombë me bojë → policia mpaket 2 s dhe njollosët; gur/molotov → policia rrëzohet 5–7 s dhe **e lë të lirë** protestuesin që po merrte; sa e rrëzon 2 herë, tërhiqet.
+💎500+ (FINALE) i largon të gjithë policët.
 - Shpeshtësia: `?police=60` (çdo 60 s), `?police=0` e fikë. Tasti `P` e nis menjëherë (provë).
 - Nga serveri: dërgo `{"type": "police"}` te WebSocket për ta thirrur me dorë.
 

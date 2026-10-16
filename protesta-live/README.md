@@ -53,6 +53,14 @@ python server.py --user @llogaria_jote      # duhet të jesh LIVE
 ```
 `python server.py --demo` nis serverin me ngjarje të simuluara. Porte: `--http-port`, `--ws-port`.
 
+Nëse `pip install` dështon te `protobuf3-to-dict` (ndodh me Python shumë të ri ose setuptools të vjetër), provo:
+```bash
+pip install -U pip setuptools wheel
+pip install -r requirements.txt
+# nëse prapë dështon:
+pip install --no-deps TikTokLive && pip install TikTokLiveProto==0.2.2 betterproto2==0.9.1 EulerApiSdk==0.1.0 websockets_proxy==0.1.3 "python-socks[asyncio]" httpx pyee==13.0.1 ffmpy websockets
+```
+
 ## Si e shfaq në TikTok LIVE
 1. **TikTok LIVE Studio / OBS**: shto *Browser Source* (ose Window Capture) me `http://localhost:8000`, madhësia **1080×1920**.
 2. Nise live-in nga LIVE Studio/OBS (TikTok kërkon kushte llogarie për transmetim nga kompjuteri).

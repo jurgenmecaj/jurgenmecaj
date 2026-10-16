@@ -119,6 +119,7 @@ const S = {
   t: 0, crowd: [], byName: new Map(), proj: [], parts: [], floats: [], timers: [],
   queue: [], banner: null, scores: {}, prefs: {}, hits: 0, joined: 0,
   shake: 0, flash: 0, flashCol: '#ff8a00', status: 'offline', likeBudget: 0,
+  combo: 0, comboT: 0, comboPop: 0, topName: '', nextChant: 18, chant: null,
 };
 const later = (sec, fn) => S.timers.push({ at: S.t + sec, fn });
 
@@ -266,11 +267,29 @@ for (const b of BUILD) {
 }
 const bById = id => BUILD.find(b => b.id === id);
 // Foto reale opsionale: vendos assets/bashkia.png, assets/kryeministria.png, assets/arsimi.png (PNG/JPG, çdo madhësi)
-for (const b of BUILD) {
-  const im = new Image();
-  im.onload = () => { b.photo = im; b.sil = mkSil(p => p.rect(0, 0, b.w, b.h)); };
-  im.src = `assets/${b.id}.png`;
+// pozicionimi kur ka foto reale (Kryeministria në qendër prapa, dy të tjerat përpara)
+const FIT = { bashkia: { w: 380, x: 0, base: 1160, z: 1 }, kryeministria: { w: 440, cx: 540, base: 1148, z: 0 }, arsimi: { w: 400, x: 680, base: 1160, z: 1 } };
+let DRAW_ORDER = BUILD.slice();
+function applyPhoto(b, im) {
+  const f = FIT[b.id];
+  b.w = f.w; b.h = Math.round(f.w * im.height / im.width); b.x = f.x ?? f.cx - f.w / 2; b.y = f.base - b.h;
+  // piqe pamjen e natës (nuancë blu + dritë e ngrohtë nga llambat poshtë)
+  const baked = document.createElement('canvas'); baked.width = b.w; baked.height = b.h; const c = baked.getContext('2d');
+  c.drawImage(im, 0, 0, b.w, b.h); c.globalCompositeOperation = 'source-atop';
+  c.fillStyle = 'rgba(28,18,78,.30)'; c.fillRect(0, 0, b.w, b.h);
+  const g = c.createLinearGradient(0, b.h * .55, 0, b.h); g.addColorStop(0, 'rgba(255,190,120,0)'); g.addColorStop(1, 'rgba(255,190,120,.22)');
+  c.fillStyle = g; c.fillRect(0, 0, b.w, b.h);
+  b.photo = baked;
+  b.splat = document.createElement('canvas'); b.splat.width = b.w; b.splat.height = b.h; b.sx = b.splat.getContext('2d');
+  b.masked = document.createElement('canvas'); b.masked.width = b.w; b.masked.height = b.h; b.dirty = true;
+  b.hit = { x: b.w * .1, y: b.h * .1, w: b.w * .8, h: b.h * .78 };
+  b.z = f.z; DRAW_ORDER = BUILD.slice().sort((p, q) => (p.z ?? 1) - (q.z ?? 1));
 }
+function refreshMask(b) {
+  const c = b.masked.getContext('2d'); c.globalCompositeOperation = 'source-over'; c.clearRect(0, 0, b.w, b.h);
+  c.drawImage(b.splat, 0, 0); c.globalCompositeOperation = 'destination-in'; c.drawImage(b.photo, 0, 0); c.globalCompositeOperation = 'source-over'; b.dirty = false;
+}
+for (const b of BUILD) { const im = new Image(); im.onload = () => applyPhoto(b, im); im.src = `assets/${b.id}.png`; }
 
 /* ------------------------------ efekte mbi godinat ------------------------------ */
 function splat(c, x, y, r, col) {
@@ -463,6 +482,11 @@ function drawPerson(p, t) {
     ctx.fillStyle = 'rgba(12,10,30,.82)'; rr(ctx, -nw / 2, top - 15, nw, 30, 15); ctx.fill();
     ctx.strokeStyle = p.color; ctx.lineWidth = 2.5; ctx.stroke();
     ctx.fillStyle = '#fff'; ctx.fillText(nm, 0, top + 1);
+    if (p.name === S.topName && p.score > 0) { // kurora e lojtarit #1
+      ctx.strokeStyle = '#ffd60a'; ctx.lineWidth = 3; rr(ctx, -nw / 2, top - 15, nw, 30, 15); ctx.stroke();
+      const cy = top - 18; ctx.fillStyle = '#ffd60a'; ctx.strokeStyle = OUT; ctx.lineWidth = 2.5;
+      poly(ctx, [[-14, cy], [-14, cy - 16], [-7, cy - 8], [0, cy - 20], [7, cy - 8], [14, cy - 16], [14, cy]]); ctx.fill(); ctx.stroke();
+    }
   }
   if (p.sayT > 0) {
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; fitText(ctx, p.say, 200, 20, '700');
@@ -488,7 +512,7 @@ function launch(p, type, b, o = {}) {
 }
 function impact(q) {
   const b = q.b, lx = q.x1 - b.x, ly = q.y1 - b.y, c = b.sx;
-  S.hits++;
+  S.hits++; b.dirty = true; S.combo = (S.comboT > 0 ? S.combo : 0) + 1; S.comboT = 3; S.comboPop = 1;
   switch (q.type) {
     case 'paint':
       splat(c, lx, ly, q.small ? rnd(18, 28) : rnd(36, 52), q.col); addHeat(b, q.small ? .6 : 1.6);
@@ -602,6 +626,14 @@ function update(dt) {
   S.t += dt;
   for (let i = S.timers.length - 1; i >= 0; i--) if (S.timers[i].at <= S.t) { const f = S.timers[i].fn; S.timers.splice(i, 1); f(); }
   S.likeBudget = Math.min(10, S.likeBudget + dt * 6);
+  S.comboT = Math.max(0, S.comboT - dt); S.comboPop = Math.max(0, S.comboPop - dt * 3);
+  const tp = Object.entries(S.scores).sort((a, b) => b[1] - a[1])[0]; S.topName = tp ? tp[0] : '';
+  if (S.chant) { S.chant.t += dt; if (S.chant.t > 1.8) S.chant = null; }
+  if (S.t > S.nextChant) {
+    S.nextChant = S.t + rnd(22, 34); S.chant = { t: 0, text: pick(['MJAFT!', 'DREJTËSI!', 'ARSIM PËR TË GJITHË!', 'BASHKË!']) };
+    S.crowd.forEach((p, i) => { if (!p.leaving) later(i * .02, () => { p.jump = 1; p.hype = 1; }); });
+    sfx.win();
+  }
   S.shake = Math.max(0, S.shake - dt); S.flash = Math.max(0, S.flash - dt * .9);
 
   for (let i = S.crowd.length - 1; i >= 0; i--) {
@@ -635,7 +667,7 @@ function update(dt) {
     }
     if (b.cleaning > 0) {
       b.cleaning -= dt; b.splatAlpha = clamp(b.cleaning / 2.4, 0, 1);
-      if (b.cleaning <= 0) { b.sx.clearRect(0, 0, b.w, b.h); b.heat = 0; b.splatAlpha = 1; b.fires.length = 0; }
+      if (b.cleaning <= 0) { b.sx.clearRect(0, 0, b.w, b.h); b.dirty = true; b.heat = 0; b.splatAlpha = 1; b.fires.length = 0; }
     }
   }
   for (let i = S.parts.length - 1; i >= 0; i--) {
@@ -654,6 +686,30 @@ function update(dt) {
 }
 
 /* ------------------------------ vizatimi ------------------------------ */
+function drawBeams(t) {
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  for (const [x0, ph] of [[120, 0], [960, 2.2]]) {
+    const a = -Math.PI / 2 + Math.sin(t * .5 + ph) * .6, L = 1150, sp = .06, y0 = 1165;
+    const g = ctx.createLinearGradient(x0, y0, x0 + Math.cos(a) * L, y0 + Math.sin(a) * L);
+    g.addColorStop(0, 'rgba(190,210,255,.20)'); g.addColorStop(1, 'rgba(190,210,255,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(x0, y0);
+    ctx.lineTo(x0 + Math.cos(a - sp) * L, y0 + Math.sin(a - sp) * L); ctx.lineTo(x0 + Math.cos(a + sp) * L, y0 + Math.sin(a + sp) * L); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+}
+function drawCombo() {
+  if (S.combo >= 5 && S.comboT > 0) {
+    const k = 1 + S.comboPop * .25; ctx.save(); ctx.translate(W / 2, 1105); ctx.scale(k, k); ctx.globalAlpha = clamp(S.comboT, 0, 1);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '900 64px Impact,"Arial Black",sans-serif';
+    outlined(ctx, `COMBO ×${S.combo}`, 0, 0, S.combo >= 20 ? '#ff4d6d' : S.combo >= 10 ? '#ffb703' : '#ffd60a', '#1b1530', 10); ctx.restore();
+  }
+  if (S.chant) {
+    const k = S.chant.t / 1.8, pop = 1 + Math.sin(Math.min(k * 4, 1) * Math.PI) * .25;
+    ctx.save(); ctx.translate(W / 2, 980); ctx.scale(pop, pop); ctx.rotate(-.05); ctx.globalAlpha = k < .75 ? 1 : 1 - (k - .75) / .25;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; fitText(ctx, S.chant.text, 900, 130, '900'); ctx.font = ctx.font.replace(/Segoe UI.*/, 'Impact,"Arial Black",sans-serif');
+    outlined(ctx, S.chant.text, 0, 0, '#fff', '#c1121f', 16); ctx.restore();
+  }
+}
 function drawParts() {
   for (const p of S.parts) {
     const k = p.life / p.max;
@@ -745,6 +801,7 @@ function drawHUD(t) {
   ctx.fillStyle = '#ffd60a'; rr(ctx, (W - dw) / 2, 232, dw, 52, 14); ctx.fill();
   ctx.strokeStyle = '#111'; ctx.lineWidth = 3; ctx.stroke();
   ctx.fillStyle = '#111'; ctx.textBaseline = 'middle'; ctx.fillText(dt, W / 2, 259);
+  drawCombo();
   drawLabels();
   drawBanner();
   // statistika + renditja
@@ -776,10 +833,18 @@ function render() {
   ctx.drawImage(bg, 0, 0);
   ctx.save();
   if (S.shake > 0) ctx.translate(rnd(-1, 1) * S.shake * 14, rnd(-1, 1) * S.shake * 14);
-  for (const b of BUILD) {
+  drawBeams(t);
+  for (const b of DRAW_ORDER) {
     ctx.save(); ctx.translate(b.x + (b.shake > 0 ? rnd(-1, 1) * b.shake * 7 : 0), b.y);
-    if (b.photo) ctx.drawImage(b.photo, 0, 0, b.w, b.h); else b.draw(ctx, b, t);
-    if (b.splatAlpha > 0) { ctx.save(); ctx.clip(b.sil); ctx.globalAlpha = b.splatAlpha; ctx.drawImage(b.splat, 0, 0); ctx.restore(); }
+    if (b.photo) {
+      if (b.heat > 50) { ctx.shadowColor = `rgba(255,70,40,${.25 + .2 * Math.sin(t * 6) * (b.heat / 100)})`; ctx.shadowBlur = 34; }
+      ctx.drawImage(b.photo, 0, 0, b.w, b.h); ctx.shadowBlur = 0;
+      if (b.dirty) refreshMask(b);
+      if (b.splatAlpha > 0) { ctx.globalAlpha = b.splatAlpha; ctx.drawImage(b.masked, 0, 0); ctx.globalAlpha = 1; }
+    } else {
+      b.draw(ctx, b, t);
+      if (b.splatAlpha > 0) { ctx.save(); ctx.clip(b.sil); ctx.globalAlpha = b.splatAlpha; ctx.drawImage(b.splat, 0, 0); ctx.restore(); }
+    }
     if (b.post && !b.photo) b.post(ctx, b, t);
     ctx.restore();
   }

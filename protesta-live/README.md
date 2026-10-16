@@ -23,9 +23,15 @@ Ka edhe renditje (top 3 gjuajtësit), statistika dhe zë (mund ta çosh me `?mut
 - **Fotot e profilit të shikuesve**: fytyra e personazhit është fotoja e vërtetë e shikuesit (me rreth ngjyrë), dhe del edhe në
   banderolën "Sapo iu bashkua protestës". Serveri i shkarkon fotot nga TikTok përmes `/avatar` (vetëm host-e të TikTok).
   Pa foto, personazhi ka fytyrë të vizatuar me shirit protestuesi.
-- **Foto reale të godinave** (opsionale): vendos `assets/bashkia.png`, `assets/kryeministria.png`, `assets/arsimi.png`
-  (PNG/JPG me sfond të prerë ose drejtkëndësh). Nëse ekzistojnë, zëvendësojnë godinat e vizatuara dhe boja mbetet sipër tyre.
-  Përdor foto që të lejohen për përdorim.
+- **Foto reale të godinave**: janë në `assets/` si PNG me sfond transparent (`bashkia.png`, `kryeministria.png`, `arsimi.png`).
+  Boja, çarjet dhe zjarri prehen saktësisht mbi formën e godinës. Për t'i ndërruar, zëvendëso skedarët me të njëjtat emra
+  (PNG me sfond transparent, ~700–900px, nën 1 MB). Nëse mungojnë, loja përdor godinat e vizatuara.
+
+## Të reja në lojë
+- 👑 Kurorë dhe kornizë e artë për gjuajtësin #1 në renditje
+- 🔥 **COMBO ×N** kur gjuajnë shumë njerëz njëkohësisht
+- 📣 Çdo ~25 sekonda turma thërret **MJAFT! / DREJTËSI! / ARSIM PËR TË GJITHË!** dhe kërcen
+- 🔦 Drita kërkuese në qiell, godinat me pamje nate, shkëlqim i kuq kur zemërimi kalon 50%
 
 ## Provë e shpejtë (pa TikTok)
 Hape `index.html` në shfletues me `?demo=1` (simulim automatik), ose pa parametra dhe shtyp:

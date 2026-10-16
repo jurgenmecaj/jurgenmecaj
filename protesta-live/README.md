@@ -19,6 +19,14 @@ Në krye ka gjithmonë shënimin: *"Kjo është vetëm një lojë · animacion s
 Çdo godinë ka shkallë **ZEMËRIMI**; kur arrin 100% mbulohet me ngjyra, pastrohet dhe fillon raundi i ri.
 Ka edhe renditje (top 3 gjuajtësit), statistika dhe zë (mund ta çosh me `?mute=1`).
 
+## Foto
+- **Fotot e profilit të shikuesve**: fytyra e personazhit është fotoja e vërtetë e shikuesit (me rreth ngjyrë), dhe del edhe në
+  banderolën "Sapo iu bashkua protestës". Serveri i shkarkon fotot nga TikTok përmes `/avatar` (vetëm host-e të TikTok).
+  Pa foto, personazhi ka fytyrë të vizatuar me shirit protestuesi.
+- **Foto reale të godinave** (opsionale): vendos `assets/bashkia.png`, `assets/kryeministria.png`, `assets/arsimi.png`
+  (PNG/JPG me sfond të prerë ose drejtkëndësh). Nëse ekzistojnë, zëvendësojnë godinat e vizatuara dhe boja mbetet sipër tyre.
+  Përdor foto që të lejohen për përdorim.
+
 ## Provë e shpejtë (pa TikTok)
 Hape `index.html` në shfletues me `?demo=1` (simulim automatik), ose pa parametra dhe shtyp:
 `J` hyrje · `1`–`5` dhurata (nivelet) · `L` like · `M` zë on/off.

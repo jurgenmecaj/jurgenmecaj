@@ -31,7 +31,7 @@ const CFG = {
   wsUrl: Q.get('ws') || 'ws://localhost:8765',
   maxCrowd: 70,
   ambient: 10,                 // protestues "figurantë" kur nuk ka njeri
-  laneTop: 1285, laneBottom: 1540,
+  laneTop: 1290, laneBottom: 1560,
 };
 
 // Nivelet e dhuratave sipas diamanteve për një dhuratë
@@ -265,6 +265,12 @@ for (const b of BUILD) {
   Object.assign(b, { heat: 0, fires: [], shake: 0, splatAlpha: 1, cleaning: 0, rounds: 0 });
 }
 const bById = id => BUILD.find(b => b.id === id);
+// Foto reale opsionale: vendos assets/bashkia.png, assets/kryeministria.png, assets/arsimi.png (PNG/JPG, çdo madhësi)
+for (const b of BUILD) {
+  const im = new Image();
+  im.onload = () => { b.photo = im; b.sil = mkSil(p => p.rect(0, 0, b.w, b.h)); };
+  im.src = `assets/${b.id}.png`;
+}
 
 /* ------------------------------ efekte mbi godinat ------------------------------ */
 function splat(c, x, y, r, col) {
@@ -340,7 +346,7 @@ function freeSpot() {
   let best = null, bd = -1;
   for (let i = 0; i < 16; i++) {
     const x = rnd(70, W - 70), y = rnd(CFG.laneTop, CFG.laneBottom);
-    let d = 1e9; for (const o of S.crowd) d = Math.min(d, Math.hypot(o.tx - x, (o.ty - y) * 1.7));
+    let d = 1e9; for (const o of S.crowd) d = Math.min(d, Math.hypot(o.tx - x, (o.ty - y) * 1.3));
     if (d > bd) { bd = d; best = { x, y }; }
   }
   return best;
@@ -357,73 +363,110 @@ function addPerson(name, ambient = false) {
   const p = {
     name, ambient, x: side < 0 ? -70 : W + 70, y: spot.y + rnd(-6, 6), tx: spot.x, ty: spot.y, walking: true, leaving: false,
     color: pick(JACKETS), skin: pick(SKINS), hair: pick(HAIR), hairStyle: rint(0, 2), bob: rnd(0, 7),
-    sign: Math.random() < .5 ? pick(SLOGANS) : null, throwT: 0, hype: 1, jump: 0, say: '', sayT: 0, score: 0, born: S.t,
+    sign: Math.random() < .38 ? pick(SLOGANS) : null, throwT: 0, hype: 1, jump: 0, say: '', sayT: 0, score: 0, born: S.t,
     mouthT: rnd(0, 2), nextIdle: S.t + rnd(3, 8),
   };
   S.crowd.push(p); if (!ambient) S.byName.set(name, p);
   return p;
 }
-const getPerson = name => S.byName.get(name) || addPerson(name);
+const AVBASE = location.protocol.startsWith('http') ? '' : 'http://localhost:8000';
+function setAvatar(p, url) {
+  if (!url || p.img || p.ambient) return;
+  const img = new Image(); img.onerror = () => { if (p.img === img) p.img = null; };
+  img.src = /^(data:|https?:)/.test(url) && !url.startsWith('http://localhost') ? url : AVBASE + url; p.img = img;
+}
+const getPerson = (name, avatar) => { const p = S.byName.get(name) || addPerson(name); setAvatar(p, avatar); return p; };
 
+function avReady(img) { return img && img.complete && img.naturalWidth > 0; }
+function shade(hex, k) { // k>0 ndriçon, k<0 errëson
+  const n = parseInt(hex.slice(1), 16), f = c => clamp(Math.round(c + (k > 0 ? (255 - c) : c) * k), 0, 255);
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+const OUT = '#1b1530';
+function limb(c, x0, y0, x1, y1, w, col) {
+  c.lineCap = 'round'; c.strokeStyle = OUT; c.lineWidth = w + 5; c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke();
+  c.strokeStyle = col; c.lineWidth = w; c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke();
+}
 function drawPerson(p, t) {
-  const s = scaleAt(p.y) * (p.ambient ? .94 : 1);
+  const s = scaleAt(p.y) * (p.ambient ? .8 : .94);
   const walking = p.walking, ph = t * 11 + p.bob;
   const bounce = walking ? -Math.abs(Math.sin(ph)) * 5 : -Math.abs(Math.sin(t * 6 + p.bob)) * 4 * p.hype;
-  const jump = p.jump > 0 ? -Math.sin((1 - p.jump) * Math.PI) * 38 : 0;
+  const jump = p.jump > 0 ? -Math.sin((1 - p.jump) * Math.PI) * 42 : 0;
   ctx.save(); ctx.translate(p.x, p.y); ctx.scale(s, s);
-  ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.ellipse(0, 2, 22, 7, 0, 0, 7); ctx.fill();
-  ctx.translate(0, bounce + jump);
-  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  // këmbët
-  ctx.strokeStyle = '#23233f'; ctx.lineWidth = 10;
-  const sw = walking ? Math.sin(ph) * 11 : 0;
-  ctx.beginPath(); ctx.moveTo(-8, -24); ctx.lineTo(-8 + sw, 0); ctx.moveTo(8, -24); ctx.lineTo(8 - sw, 0); ctx.stroke();
+  ctx.fillStyle = 'rgba(0,0,0,.38)'; ctx.beginPath(); ctx.ellipse(0, 3, 26, 8, 0, 0, 7); ctx.fill();
+  ctx.translate(0, bounce + jump); ctx.lineJoin = 'round';
+  const sw = walking ? Math.sin(ph) * 11 : 0, throwing = p.throwT > 0;
+  // këmbë + atlete
+  limb(ctx, -9, -28, -9 + sw, -4, 12, '#2d3354'); limb(ctx, 9, -28, 9 - sw, -4, 12, '#2d3354');
+  for (const [fx, d] of [[-9 + sw, 0], [9 - sw, 0]]) {
+    ctx.fillStyle = '#fff'; ctx.strokeStyle = OUT; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(fx + 2, -2, 11, 6.5, 0, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = p.color; ctx.fillRect(fx - 4, -4, 12, 3);
+  }
+  // çanta në shpinë (pjesa e dukshme anash)
+  ctx.fillStyle = shade(p.color, -.35); rr(ctx, -27, -66, 12, 30, 5); ctx.fill(); ctx.strokeStyle = OUT; ctx.lineWidth = 3; ctx.stroke();
   // krahu i majtë
-  const throwing = p.throwT > 0;
-  ctx.strokeStyle = p.color; ctx.lineWidth = 9;
-  ctx.beginPath(); ctx.moveTo(-17, -58); ctx.lineTo(-25 + (walking ? Math.sin(ph) * 6 : Math.sin(t * 6 + p.bob) * 4), p.sign || p.hype > .3 ? -88 : -34); ctx.stroke();
-  // trupi
-  ctx.fillStyle = p.color; rr(ctx, -18, -68, 36, 48, 13); ctx.fill();
-  ctx.fillStyle = 'rgba(255,255,255,.18)'; rr(ctx, -18, -68, 36, 12, 8); ctx.fill();
+  const lax = -26 + (walking ? Math.sin(ph) * 6 : Math.sin(t * 6 + p.bob) * 4), lay = p.sign || p.hype > .3 ? -92 : -36;
+  limb(ctx, -18, -62, lax, lay, 11, p.color);
+  ctx.fillStyle = p.skin; ctx.strokeStyle = OUT; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(lax, lay, 6.5, 0, 7); ctx.fill(); ctx.stroke();
+  // trupi (xhaketë me gradient)
+  const gg = ctx.createLinearGradient(-20, -74, 20, -26); gg.addColorStop(0, shade(p.color, .28)); gg.addColorStop(1, shade(p.color, -.22));
+  ctx.fillStyle = gg; rr(ctx, -21, -74, 42, 52, 15); ctx.fill(); ctx.strokeStyle = OUT; ctx.lineWidth = 3.5; ctx.stroke();
+  ctx.strokeStyle = 'rgba(0,0,0,.28)'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(0, -66); ctx.lineTo(0, -24); ctx.stroke(); // zinxhir
+  ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.fillRect(-21, -41, 42, 4); // vijë reflektuese
+  ctx.fillStyle = shade(p.color, -.3); poly(ctx, [[-10, -74], [10, -74], [0, -62]]); ctx.fill(); // jakë
   // krahu i djathtë
-  ctx.strokeStyle = p.color; ctx.lineWidth = 9;
   let hx, hy;
-  if (throwing) { const k = 1 - p.throwT / .35, a = -2.5 + k * 3.1; hx = 17 + Math.cos(a) * 27; hy = -58 + Math.sin(a) * 27; }
-  else if (p.sign) { hx = 24; hy = -96; }
-  else { hx = 25; hy = walking ? -34 + Math.sin(ph + 3) * 6 : -90 + Math.sin(t * 7 + p.bob) * 6 * p.hype; }
-  ctx.beginPath(); ctx.moveTo(17, -58); ctx.lineTo(hx, hy); ctx.stroke();
-  ctx.fillStyle = p.skin; ctx.beginPath(); ctx.arc(hx, hy, 5.5, 0, 7); ctx.fill();
-  // koka
-  ctx.fillStyle = p.skin; ctx.beginPath(); ctx.arc(0, -84, 17, 0, 7); ctx.fill();
-  ctx.fillStyle = p.hair;
-  ctx.beginPath(); ctx.arc(0, -86, 17.5, Math.PI * 1.02, Math.PI * 1.98); ctx.closePath(); ctx.fill();
-  if (p.hairStyle === 1) { ctx.fillRect(-18, -90, 6, 16); ctx.fillRect(12, -90, 6, 16); }
-  if (p.hairStyle === 2) { ctx.beginPath(); ctx.arc(0, -103, 7, 0, 7); ctx.fill(); }
-  ctx.fillStyle = '#1a1a24'; ctx.beginPath(); ctx.arc(-6, -83, 2.4, 0, 7); ctx.arc(6, -83, 2.4, 0, 7); ctx.fill();
-  ctx.strokeStyle = '#1a1a24'; ctx.lineWidth = 2.4; ctx.beginPath();
-  ctx.moveTo(-10, -91); ctx.lineTo(-3, -88); ctx.moveTo(10, -91); ctx.lineTo(3, -88); ctx.stroke();
-  const chant = !walking && Math.sin(t * 5 + p.mouthT * 3) > .1;
-  ctx.fillStyle = '#5a1620';
-  if (chant || throwing) { ctx.beginPath(); ctx.ellipse(0, -75, 5, 4.5, 0, 0, 7); ctx.fill(); }
-  else { ctx.strokeStyle = '#5a1620'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-4, -75); ctx.lineTo(4, -75); ctx.stroke(); }
+  if (throwing) { const k = 1 - p.throwT / .35, a = -2.5 + k * 3.1; hx = 18 + Math.cos(a) * 29; hy = -62 + Math.sin(a) * 29; }
+  else if (p.sign) { hx = 26; hy = -100; }
+  else { hx = 27; hy = walking ? -36 + Math.sin(ph + 3) * 6 : -94 + Math.sin(t * 7 + p.bob) * 7 * p.hype; }
+  limb(ctx, 18, -62, hx, hy, 11, p.color);
+  ctx.fillStyle = p.skin; ctx.strokeStyle = OUT; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(hx, hy, 6.5, 0, 7); ctx.fill(); ctx.stroke();
+  // koka: FOTOJA e shikuesit ose fytyrë e vizatuar
+  const HY = -102, HR = 27;
+  ctx.fillStyle = p.skin; rr(ctx, -6, -80, 12, 12, 4); ctx.fill(); // qafa
+  if (avReady(p.img)) {
+    ctx.save(); ctx.beginPath(); ctx.arc(0, HY, HR, 0, 7); ctx.clip();
+    ctx.drawImage(p.img, -HR, HY - HR, HR * 2, HR * 2); ctx.restore();
+    ctx.lineWidth = 5; ctx.strokeStyle = '#fff'; ctx.beginPath(); ctx.arc(0, HY, HR, 0, 7); ctx.stroke();
+    ctx.lineWidth = 3; ctx.strokeStyle = p.color; ctx.beginPath(); ctx.arc(0, HY, HR + 3.5, 0, 7); ctx.stroke();
+    ctx.lineWidth = 2; ctx.strokeStyle = OUT; ctx.beginPath(); ctx.arc(0, HY, HR + 6, 0, 7); ctx.stroke();
+  } else {
+    ctx.fillStyle = p.skin; ctx.beginPath(); ctx.arc(0, HY, HR - 2, 0, 7); ctx.fill(); ctx.strokeStyle = OUT; ctx.lineWidth = 3.5; ctx.stroke();
+    ctx.fillStyle = p.hair; ctx.beginPath(); ctx.arc(0, HY - 3, HR - 1, Math.PI * 1.02, Math.PI * 1.98); ctx.closePath(); ctx.fill(); ctx.stroke();
+    if (p.hairStyle === 1) { ctx.fillRect(-HR, HY - 6, 8, 22); ctx.fillRect(HR - 8, HY - 6, 8, 22); }
+    if (p.hairStyle === 2) { ctx.beginPath(); ctx.arc(0, HY - HR - 4, 9, 0, 7); ctx.fill(); ctx.stroke(); }
+    ctx.fillStyle = '#d3122a'; ctx.fillRect(-HR + 1, HY - 9, (HR - 1) * 2, 6); // shirit protestuesi
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.ellipse(-8, HY + 2, 5, 6, 0, 0, 7); ctx.ellipse(8, HY + 2, 5, 6, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = '#1a1a24'; ctx.beginPath(); ctx.arc(-7, HY + 3, 3, 0, 7); ctx.arc(9, HY + 3, 3, 0, 7); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(-6, HY + 2, 1.1, 0, 7); ctx.arc(10, HY + 2, 1.1, 0, 7); ctx.fill();
+    ctx.fillStyle = 'rgba(255,90,110,.35)'; ctx.beginPath(); ctx.arc(-15, HY + 10, 4.5, 0, 7); ctx.arc(15, HY + 10, 4.5, 0, 7); ctx.fill();
+    const chant = !walking && Math.sin(t * 5 + p.mouthT * 3) > .1;
+    if (chant || throwing) { ctx.fillStyle = '#5a1620'; ctx.beginPath(); ctx.ellipse(0, HY + 14, 6, 5.5, 0, 0, 7); ctx.fill(); ctx.fillStyle = '#ff7b8a'; ctx.beginPath(); ctx.ellipse(0, HY + 16, 3.5, 2, 0, 0, 7); ctx.fill(); }
+    else { ctx.strokeStyle = '#5a1620'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(0, HY + 11, 5, .2, Math.PI - .2); ctx.stroke(); }
+  }
+  // fjalë "!" kur thërret
+  if (!walking && Math.sin(t * 5 + p.mouthT * 3) > .6 && !p.sign) { ctx.fillStyle = '#ffd60a'; ctx.font = '900 20px Impact,sans-serif'; ctx.textAlign = 'center'; ctx.strokeStyle = OUT; ctx.lineWidth = 4; ctx.strokeText('!', 34, HY - 22); ctx.fillText('!', 34, HY - 22); }
   // pllakati
-  let top = -112;
+  let top = -146;
   if (p.sign && !throwing) {
-    ctx.save(); ctx.translate(24, -96); ctx.rotate(Math.sin(t * 3 + p.bob) * .12 - .05);
-    ctx.strokeStyle = '#6b4a2b'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(0, 6); ctx.lineTo(0, -30); ctx.stroke();
-    ctx.fillStyle = '#fffbe8'; rr(ctx, -52, -76, 104, 46, 6); ctx.fill();
-    ctx.strokeStyle = '#222'; ctx.lineWidth = 3; ctx.stroke();
-    ctx.fillStyle = '#c1121f'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; fitText(ctx, p.sign, 92, 22, '900'); ctx.fillText(p.sign, 0, -53);
-    ctx.restore(); top = -172;
+    ctx.save(); ctx.translate(26, -100); ctx.rotate(Math.sin(t * 3 + p.bob) * .12 - .05);
+    ctx.strokeStyle = '#6b4a2b'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(0, 6); ctx.lineTo(0, -56); ctx.stroke();
+    ctx.fillStyle = '#fffbe8'; rr(ctx, -44, -104, 88, 38, 6); ctx.fill();
+    ctx.strokeStyle = OUT; ctx.lineWidth = 3.5; ctx.stroke();
+    ctx.fillStyle = '#c1121f'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; fitText(ctx, p.sign, 78, 20, '900'); ctx.fillText(p.sign, 0, -85);
+    ctx.restore(); top = -196;
   }
   if (!p.ambient) {
-    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     const nm = p.name.length > 14 ? p.name.slice(0, 13) + '…' : p.name;
-    fitText(ctx, nm, 130, 22, '800'); outlined(ctx, nm, 0, top, '#fff', 'rgba(0,0,0,.9)', 5);
+    fitText(ctx, nm, 130, 22, '800'); const nw = ctx.measureText(nm).width + 22;
+    ctx.fillStyle = 'rgba(12,10,30,.82)'; rr(ctx, -nw / 2, top - 15, nw, 30, 15); ctx.fill();
+    ctx.strokeStyle = p.color; ctx.lineWidth = 2.5; ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.fillText(nm, 0, top + 1);
   }
   if (p.sayT > 0) {
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; fitText(ctx, p.say, 200, 20, '700');
-    const w = ctx.measureText(p.say).width + 22, y = top - 30;
+    const w = ctx.measureText(p.say).width + 22, y = top - 34;
     ctx.globalAlpha = clamp(p.sayT * 2, 0, 1);
     ctx.fillStyle = '#fff'; rr(ctx, -w / 2, y - 16, w, 32, 14); ctx.fill();
     poly(ctx, [[-6, y + 15], [6, y + 15], [0, y + 24]]); ctx.fill();
@@ -474,45 +517,45 @@ function finale(user) {
 }
 
 /* ------------------------------ ngjarjet ------------------------------ */
-function pushBanner(kind, l1, l2) { S.queue.push({ kind, l1, l2 }); if (S.queue.length > 14) S.queue.splice(1, 1); }
-function onJoin(user) {
+function pushBanner(kind, l1, l2, img) { S.queue.push({ kind, l1, l2, img }); if (S.queue.length > 14) S.queue.splice(1, 1); }
+function onJoin(user, avatar) {
   if (!user) return;
   const isNew = !S.byName.has(user);
-  const p = addPerson(user); p.jump = 1;
+  const p = addPerson(user); setAvatar(p, avatar); p.jump = 1;
   if (isNew) S.joined++;
-  pushBanner('join', 'SAPO IU BASHKUA PROTESTËS:', '@' + user);
+  pushBanner('join', 'SAPO IU BASHKUA PROTESTËS:', '@' + user, p.img);
   sfx.join();
 }
-function onGift(user, name, diamonds, count) {
+function onGift(user, name, diamonds, count, avatar) {
   count = Math.max(1, count | 0); diamonds = Math.max(1, diamonds | 0);
-  const tier = tierOf(diamonds), p = getPerson(user);
+  const tier = tierOf(diamonds), p = getPerson(user, avatar);
   S.scores[user] = (S.scores[user] || 0) + diamonds * count; p.score = S.scores[user]; p.jump = 1;
   if (tier.key === 'finale') return finale(user);
   const b = chooseTarget(user), n = Math.min(count, 10);
-  pushBanner('gift', `${tier.icon} ${tier.label.toUpperCase()}${count > 1 ? ' ×' + count : ''}${name ? ' · ' + name : ''}`, `@${user} → ${b.label}`);
+  pushBanner('gift', `${tier.icon} ${tier.label.toUpperCase()}${count > 1 ? ' ×' + count : ''}${name ? ' · ' + name : ''}`, `@${user} → ${b.label}`, p.img);
   for (let i = 0; i < n; i++) later(i * .28, () => launch(p, tier.key, b));
 }
-function onLike(user, count) {
+function onLike(user, count, avatar) {
   S.likeBudget = Math.min(S.likeBudget + Math.min(count || 1, 5), 10);
   if (S.likeBudget < 1) return;
   S.likeBudget -= 1;
-  const p = getPerson(user); if (S.proj.length < 60) launch(p, 'paint', chooseTarget(user), { small: true });
+  const p = getPerson(user, avatar); if (S.proj.length < 60) launch(p, 'paint', chooseTarget(user), { small: true });
 }
-function onChat(user, text) {
-  const p = getPerson(user), low = (text || '').toLowerCase();
+function onChat(user, text, avatar) {
+  const p = getPerson(user, avatar), low = (text || '').toLowerCase();
   const hit = /bashki/.test(low) ? 'bashkia' : /kryemin/.test(low) ? 'kryeministria' : /arsim/.test(low) ? 'arsimi' : null;
   if (hit) { S.prefs[user] = hit; p.say = '🎯 ' + bById(hit).label; } else p.say = (text || '').slice(0, 34);
   p.sayT = 3.2;
 }
 function handle(m) {
   switch (m.type) {
-    case 'join': return onJoin(m.user);
-    case 'gift': return onGift(m.user, m.gift, m.diamonds, m.count);
-    case 'like': return onLike(m.user, m.count);
-    case 'chat': return onChat(m.user, m.text);
+    case 'join': return onJoin(m.user, m.avatar);
+    case 'gift': return onGift(m.user, m.gift, m.diamonds, m.count, m.avatar);
+    case 'like': return onLike(m.user, m.count, m.avatar);
+    case 'chat': return onChat(m.user, m.text, m.avatar);
   }
 }
-window.__game = { handle, S }; // për teste / integrime të tjera
+window.__game = { handle, S, demoAvatar }; // për teste / integrime të tjera
 
 /* ------------------------------ lidhja me TikTok (WebSocket) ------------------------------ */
 (function connect() {
@@ -527,11 +570,16 @@ window.__game = { handle, S }; // për teste / integrime të tjera
 
 /* ------------------------------ demo & tastiera ------------------------------ */
 const fake = () => pick(NAMES_DEMO) + (Math.random() < .5 ? '_' + rint(1, 99) : '');
+function demoAvatar(n) {
+  const h = [...n].reduce((a, c) => a + c.charCodeAt(0), 0) * 37 % 360, e = pick(['😀', '😎', '🤠', '🥳', '😄', '🧑‍🎤', '👩‍🎓', '🧔']);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${h},85%,62%)"/><stop offset="1" stop-color="hsl(${(h + 60) % 360},80%,40%)"/></linearGradient></defs><rect width="128" height="128" fill="url(#g)"/><text x="64" y="88" font-size="72" text-anchor="middle">${e}</text></svg>`;
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+}
 const GIFT_D = [1, 1, 1, 5, 10, 10, 30, 30, 100, 100, 500];
 if (Q.has('demo')) {
   (function loop() {
     const r = Math.random();
-    if (r < .42) handle({ type: 'join', user: fake() });
+    if (r < .42) { const u = fake(); handle({ type: 'join', user: u, avatar: demoAvatar(u) }); }
     else if (r < .75) handle({ type: 'gift', user: S.crowd.length && Math.random() < .6 ? pick(S.crowd.filter(p => !p.ambient).concat([{ name: fake() }])).name : fake(), gift: 'Dhuratë', diamonds: pick(GIFT_D), count: rint(1, 3) });
     else if (r < .9) handle({ type: 'like', user: fake(), count: rint(1, 5) });
     else handle({ type: 'chat', user: fake(), text: pick(['!bashkia', '!arsimi', '!kryeministria', 'MJAFT!', 'Ora ka ardhur', 'Së bashku!']) });
@@ -540,7 +588,7 @@ if (Q.has('demo')) {
 }
 addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
-  if (k === 'j') handle({ type: 'join', user: fake() });
+  if (k === 'j') { const u = fake(); handle({ type: 'join', user: u, avatar: demoAvatar(u) }); }
   else if (k === 'l') handle({ type: 'like', user: fake(), count: 3 });
   else if (k === 'm') sfx.toggle();
   else if ('12345'.includes(k) && k) handle({ type: 'gift', user: fake(), gift: 'Test', diamonds: [1, 10, 30, 100, 500][+k - 1], count: 1 });
@@ -668,8 +716,14 @@ function drawBanner() {
   ctx.strokeStyle = acc; ctx.lineWidth = 3; ctx.stroke();
   ctx.fillStyle = acc; rr(ctx, x, y, 14, h, 7); ctx.fill();
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-  fitText(ctx, bn.l1, w - 70, 26, '800'); ctx.fillStyle = acc; ctx.fillText(bn.l1, x + 38, y + 36);
-  fitText(ctx, bn.l2, w - 70, 42, '900'); ctx.fillStyle = '#fff'; ctx.fillText(bn.l2, x + 38, y + 80);
+  let tx = x + 38;
+  if (avReady(bn.img)) {
+    const ar = 34, ax = x + 62, ay = y + h / 2;
+    ctx.save(); ctx.beginPath(); ctx.arc(ax, ay, ar, 0, 7); ctx.clip(); ctx.drawImage(bn.img, ax - ar, ay - ar, ar * 2, ar * 2); ctx.restore();
+    ctx.lineWidth = 4; ctx.strokeStyle = acc; ctx.beginPath(); ctx.arc(ax, ay, ar + 2, 0, 7); ctx.stroke(); tx = x + 114;
+  }
+  fitText(ctx, bn.l1, w - (tx - x) - 32, 26, '800'); ctx.fillStyle = acc; ctx.fillText(bn.l1, tx, y + 36);
+  fitText(ctx, bn.l2, w - (tx - x) - 32, 42, '900'); ctx.fillStyle = '#fff'; ctx.fillText(bn.l2, tx, y + 80);
   ctx.restore();
 }
 function drawHUD(t) {
@@ -724,9 +778,9 @@ function render() {
   if (S.shake > 0) ctx.translate(rnd(-1, 1) * S.shake * 14, rnd(-1, 1) * S.shake * 14);
   for (const b of BUILD) {
     ctx.save(); ctx.translate(b.x + (b.shake > 0 ? rnd(-1, 1) * b.shake * 7 : 0), b.y);
-    b.draw(ctx, b, t);
+    if (b.photo) ctx.drawImage(b.photo, 0, 0, b.w, b.h); else b.draw(ctx, b, t);
     if (b.splatAlpha > 0) { ctx.save(); ctx.clip(b.sil); ctx.globalAlpha = b.splatAlpha; ctx.drawImage(b.splat, 0, 0); ctx.restore(); }
-    if (b.post) b.post(ctx, b, t);
+    if (b.post && !b.photo) b.post(ctx, b, t);
     ctx.restore();
   }
   const sorted = S.crowd.slice().sort((a, b) => a.y - b.y);

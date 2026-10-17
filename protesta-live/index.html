@@ -38,14 +38,15 @@ const CFG = {
 
 // Nivelet e dhuratave sipas diamanteve për një dhuratë
 const TIERS = [
-  { min: 1,   key: 'paint',   label: 'Bojë',          icon: '🎨' },
-  { min: 10,  key: 'bomb',    label: 'Bombë me bojë', icon: '💥' },
-  { min: 30,  key: 'stone',   label: 'Gur',           icon: '🪨' },
+  { min: 1,   key: 'paint',   label: 'Guralec',       icon: '🪨' },
+  { min: 10,  key: 'bomb',    label: 'Gur',           icon: '🪨' },
+  { min: 30,  key: 'stone',   label: 'Shkëmb',        icon: '⛰️' },
   { min: 100, key: 'molotov', label: 'Molotov',       icon: '🔥' },
   { min: 500, key: 'finale',  label: 'FINALE',        icon: '🎆' },
 ];
 const tierOf = d => { let t = TIERS[0]; for (const x of TIERS) if (d >= x.min) t = x; return t; };
 
+const STONES = ['#8b8b98', '#7d7a85', '#a09aa6', '#6f6c7a', '#9a9486'];
 const INK = ['#ff2e63', '#08d9d6', '#fcff00', '#7cff3a', '#b84dff', '#ff8a00', '#2e86ff'];
 const JACKETS = ['#e63946', '#2a9d8f', '#e9c46a', '#457b9d', '#9b5de5', '#f77f00', '#06d6a0', '#ef476f', '#118ab2', '#ffd166', '#8338ec', '#fb5607'];
 const SKINS = ['#f2c9a0', '#e0a97c', '#c68642', '#8d5524', '#ffdbac'];
@@ -326,17 +327,22 @@ function splat(c, x, y, r, col) {
   }
   c.fillStyle = 'rgba(255,255,255,.28)'; c.beginPath(); c.ellipse(x - r * .25, y - r * .3, r * .25, r * .14, -.6, 0, 7); c.fill();
 }
-function crack(c, x, y) {
+function crack(c, x, y, k = 1) {
   c.save(); c.strokeStyle = 'rgba(15,12,22,.9)'; c.lineCap = 'round'; c.lineJoin = 'round';
-  c.fillStyle = 'rgba(40,36,52,.8)'; c.beginPath(); c.arc(x, y, rnd(7, 10), 0, 7); c.fill();
-  const rays = rint(6, 9);
+  // vrima e goditjes me buzë të çelët
+  c.fillStyle = 'rgba(210,205,215,.35)'; c.beginPath(); c.ellipse(x, y, 12 * k, 10 * k, rnd(0, 3), 0, 7); c.fill();
+  c.fillStyle = 'rgba(30,26,40,.85)'; c.beginPath(); c.ellipse(x, y, 8 * k, 6.5 * k, rnd(0, 3), 0, 7); c.fill();
+  const rays = Math.max(4, Math.round(rint(6, 9) * Math.min(1.4, .55 + .45 * k)));
   for (let i = 0; i < rays; i++) {
-    let a = (i / rays) * 6.283 + rnd(-.25, .25), px = x, py = y; const len = rnd(40, 90); c.lineWidth = rnd(1.8, 3.4);
+    let a = (i / rays) * 6.283 + rnd(-.25, .25), px = x, py = y; const len = rnd(40, 90) * k; c.lineWidth = rnd(1.6, 3.2) * Math.sqrt(k);
     c.beginPath(); c.moveTo(px, py);
     for (let d = 0; d < len; d += rnd(9, 15)) { a += rnd(-.45, .45); px += Math.cos(a) * 12; py += Math.sin(a) * 12; c.lineTo(px, py); }
     c.stroke();
   }
   c.restore();
+}
+function dust(x, y, n, k = 1) {
+  for (let i = 0; i < n; i++) P({ x: x + rnd(-14, 14) * k, y: y + rnd(-10, 10) * k, vx: rnd(-50, 50), vy: rnd(-45, -5), life: rnd(.6, 1.2), size: rnd(8, 15) * k, grow: 32, col: '#cfc9d6', alpha: .38, type: 'smoke' });
 }
 function soot(c, x, y) {
   const g = c.createRadialGradient(x, y, 4, x, y, 80);
@@ -349,7 +355,7 @@ function addHeat(b, v) {
   if (b.heat >= 100) {
     b.cleaning = 2.4; b.rounds++; b.done = true;
     if (BUILD.every(x => x.done)) { BUILD.forEach(x => { x.done = false; }); S.victories++; later(1.2, victory); }
-    pushBanner('win', 'ZEMËRIMI 100%', `${b.label} u mbulua me ngjyra!`);
+    pushBanner('win', 'ZEMËRIMI 100%', `${b.label} u godit plotësisht!`);
     for (let i = 0; i < 5; i++) later(i * .15, () => confetti(b.x + b.w / 2 + rnd(-90, 90), b.y + rnd(0, 120), 22));
     sfx.win();
   }
@@ -560,7 +566,7 @@ function launch(p, type, b, o = {}) {
   const sc = scaleAt(p.y), x0 = p.x + 22 * sc, y0 = p.y - 88 * sc;
   const hp = b.hit, x1 = b.x + rnd(hp.x, hp.x + hp.w), y1 = b.y + rnd(hp.y, hp.y + hp.h);
   const dist = Math.hypot(x1 - x0, y1 - y0);
-  S.proj.push({ type, x: x0, y: y0, x0, y0, x1, y1, t: 0, dur: clamp(dist / 850, .65, 1.3), arc: rnd(170, 300), rot: rnd(0, 6), vr: rnd(-9, 9), col: pick(INK), b, small: !!o.small, user: p.name });
+  S.proj.push({ type, x: x0, y: y0, x0, y0, x1, y1, t: 0, dur: clamp(dist / 850, .65, 1.3), arc: rnd(170, 300), rot: rnd(0, 6), vr: rnd(-9, 9), col: pick(STONES), b, small: !!o.small, user: p.name });
   p.throwT = .35; p.hype = 1; p.nextIdle = S.t + rnd(3, 8);
   sfx.whoosh();
 }
@@ -570,15 +576,17 @@ function impact(q) {
   const b = q.b, lx = q.x1 - b.x, ly = q.y1 - b.y, c = b.sx;
   S.hits++; b.dirty = true; S.combo = (S.comboT > 0 ? S.combo : 0) + 1; S.comboT = 3; S.comboPop = 1;
   switch (q.type) {
-    case 'paint':
-      splat(c, lx, ly, q.small ? rnd(18, 28) : rnd(36, 52), q.col); addHeat(b, q.small ? .6 : 1.6);
-      burst(q.x1, q.y1, q.small ? 6 : 12, q.col, 260, { g: 900 }); floatText(q.x1, q.y1 - 20, 'SPLAT!', q.col); sfx.splat(); break;
-    case 'bomb':
-      splat(c, lx, ly, rnd(70, 92), q.col); splat(c, lx + rnd(-50, 50), ly + rnd(-40, 40), rnd(34, 50), pick(INK)); splat(c, lx + rnd(-60, 60), ly + rnd(-50, 50), rnd(30, 44), pick(INK));
-      addHeat(b, 5); burst(q.x1, q.y1, 28, INK, 420, { g: 900, size: 9 }); floatText(q.x1, q.y1 - 30, 'SPLAT!!', q.col); b.shake = .3; sfx.splat(); break;
-    case 'stone':
-      crack(c, lx, ly); addHeat(b, 7); burst(q.x1, q.y1, 22, ['#8a8a96', '#b8b8c4', '#5f5f6c'], 380, { g: 1100, size: 7 });
-      floatText(q.x1, q.y1 - 20, 'KRAK!', '#e5e5f0'); b.shake = .45; S.shake = Math.max(S.shake, .25); sfx.crack(); break;
+    case 'paint': // guralec
+      crack(c, lx, ly, q.small ? .4 : .6); addHeat(b, q.small ? .6 : 1.4);
+      burst(q.x1, q.y1, q.small ? 5 : 9, ['#8a8a96', '#b8b8c4', '#5f5f6c'], 240, { g: 1000, size: 5 }); dust(q.x1, q.y1, 2, .6);
+      floatText(q.x1, q.y1 - 20, 'TAK!', '#e5e5f0'); sfx.crack(); break;
+    case 'bomb': // gur
+      crack(c, lx, ly, 1); addHeat(b, 5); burst(q.x1, q.y1, 18, ['#8a8a96', '#b8b8c4', '#5f5f6c'], 340, { g: 1100, size: 7 }); dust(q.x1, q.y1, 4, 1);
+      floatText(q.x1, q.y1 - 24, 'KRAK!', '#e5e5f0'); b.shake = .3; sfx.crack(); break;
+    case 'stone': // shkëmb
+      crack(c, lx, ly, 1.7); crack(c, lx + rnd(-30, 30), ly + rnd(-24, 24), .8); addHeat(b, 8);
+      burst(q.x1, q.y1, 30, ['#8a8a96', '#b8b8c4', '#5f5f6c', '#a79f90'], 420, { g: 1200, size: 9 }); dust(q.x1, q.y1, 8, 1.5);
+      floatText(q.x1, q.y1 - 30, 'KRAAK!', '#ffffff'); b.shake = .5; S.shake = Math.max(S.shake, .3); sfx.crack(); break;
     case 'molotov':
       soot(c, lx, ly); addHeat(b, 12); b.fires.push({ x: lx, y: ly, t: 0, dur: rnd(2.6, 3.6) });
       burst(q.x1, q.y1, 26, ['#ffd23f', '#ff8a00', '#ff3d00'], 460, { g: 300, size: 8, up: 120, type: 'spark' });
@@ -607,7 +615,7 @@ function startRaid() {
 const copsActive = () => S.raid && S.raid.t < S.raid.dur && S.cops.length > 0;
 function launchAtCop(p, type, cop) {
   const sc = scaleAt(p.y), x0 = p.x + 22 * sc, y0 = p.y - 88 * sc, x1 = cop.x, y1 = cop.y - 72 * scaleAt(cop.y);
-  S.proj.push({ type, x: x0, y: y0, x0, y0, x1, y1, t: 0, dur: clamp(Math.hypot(x1 - x0, y1 - y0) / 850, .55, 1.1), arc: rnd(120, 240), rot: rnd(0, 6), vr: rnd(-9, 9), col: pick(INK), b: null, cop, user: p.name });
+  S.proj.push({ type, x: x0, y: y0, x0, y0, x1, y1, t: 0, dur: clamp(Math.hypot(x1 - x0, y1 - y0) / 850, .55, 1.1), arc: rnd(120, 240), rot: rnd(0, 6), vr: rnd(-9, 9), col: pick(STONES), b: null, cop, user: p.name });
   p.throwT = .35; p.hype = 1; p.nextIdle = S.t + rnd(3, 8); sfx.whoosh();
 }
 function releasePerson(c) {
@@ -625,8 +633,8 @@ function copImpact(q) {
   const c = q.cop; if (!S.cops.includes(c)) return;
   S.hits++; S.combo = (S.comboT > 0 ? S.combo : 0) + 1; S.comboT = 3; S.comboPop = 1;
   if (q.type === 'paint' || q.type === 'bomb') {
-    c.tint = q.col; c.tintT = 8; c.stun = Math.max(c.stun || 0, 2); c.target && c.state !== 'escort' && (c.target.targeted = false, c.target = null, c.state = 'idle');
-    burst(q.x1, q.y1, 24, INK, 380, { g: 900, size: 9 }); floatText(q.x1, q.y1 - 30, 'SPLAT!', q.col); sfx.splat();
+    c.stun = Math.max(c.stun || 0, 2); c.target && c.state !== 'escort' && (c.target.targeted = false, c.target = null, c.state = 'idle');
+    burst(q.x1, q.y1, 16, ['#8a8a96', '#b8b8c4', '#5f5f6c'], 340, { g: 1000, size: 6 }); dust(q.x1, q.y1, 4, 1); floatText(q.x1, q.y1 - 30, 'TAK!', '#e5e5f0'); sfx.crack();
   } else {
     knock(c, q.type === 'molotov' ? 7 : 5);
     burst(q.x1, q.y1, 22, q.type === 'molotov' ? ['#ffd23f', '#ff8a00', '#ff3d00'] : ['#8a8a96', '#b8b8c4'], 380, { g: 900, size: 7 });
@@ -729,7 +737,7 @@ function celebrate(n) {
   sfx.win();
 }
 function victory() {
-  pushBanner('win', '🏆 FITORE E PËRBASHKËT!', 'Të tre godinat u mbuluan me ngjyra!'); celebrate(9); S.shake = Math.max(S.shake, .4);
+  pushBanner('win', '🏆 FITORE E PËRBASHKËT!', 'Të tre godinat u goditën plotësisht!'); celebrate(9); S.shake = Math.max(S.shake, .4);
 }
 function startChallenge(kind) {
   const real = S.crowd.filter(p => !p.ambient && !p.leaving).length;
@@ -751,7 +759,7 @@ function endChallenge() {
   else pushBanner('join', 'SFIDA NUK U KRYE', 'Provojmë përsëri së shpejti!');
 }
 function finale(user) {
-  pushBanner('gift', `🎆 FINALE nga @${user}`, 'Të gjithë gjuajnë bojë!');
+  pushBanner('gift', `🎆 FINALE nga @${user}`, 'Të gjithë gjuajnë gurë!');
   const people = S.crowd.filter(p => !p.leaving);
   BUILD.forEach((b, bi) => {
     for (let i = 0; i < 7; i++) later(bi * .25 + i * .22, () => { const p = pick(people); if (p) launch(p, 'bomb', b); });
@@ -1030,14 +1038,20 @@ function drawParts() {
     }
   }
 }
+function drawStone(k, col) {
+  ctx.save(); ctx.scale(k, k);
+  ctx.fillStyle = col; poly(ctx, [[-16, -6], [-6, -16], [10, -13], [18, 0], [10, 14], [-8, 15], [-18, 6]]); ctx.fill();
+  ctx.strokeStyle = '#3f3d4a'; ctx.lineWidth = 3 / Math.sqrt(k); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,.22)'; poly(ctx, [[-10, -8], [2, -11], [0, -2]]); ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,.18)'; poly(ctx, [[2, 4], [12, 2], [6, 11]]); ctx.fill();
+  ctx.restore();
+}
 function drawProj(q) {
   ctx.save(); ctx.translate(q.x, q.y); ctx.rotate(q.rot);
   switch (q.type) {
-    case 'paint': { const r = q.small ? 9 : 15; ctx.fillStyle = q.col; ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.beginPath(); ctx.arc(-r * .3, -r * .3, r * .3, 0, 7); ctx.fill(); break; }
-    case 'bomb': ctx.fillStyle = q.col; ctx.beginPath(); ctx.arc(0, 0, 24, 0, 7); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.stroke();
-      ctx.fillStyle = '#222'; ctx.fillRect(-4, -34, 8, 12); ctx.fillStyle = '#ffd23f'; ctx.beginPath(); ctx.arc(0, -37, 5, 0, 7); ctx.fill(); break;
-    case 'stone': ctx.fillStyle = '#8b8b98'; poly(ctx, [[-16, -6], [-6, -16], [10, -13], [18, 0], [10, 14], [-8, 15], [-18, 6]]); ctx.fill();
-      ctx.strokeStyle = '#4a4a56'; ctx.lineWidth = 3; ctx.stroke(); ctx.fillStyle = 'rgba(255,255,255,.2)'; poly(ctx, [[-10, -8], [2, -11], [0, -2]]); ctx.fill(); break;
+    case 'paint': drawStone(q.small ? .5 : .72, q.col); break;
+    case 'bomb': drawStone(1, q.col); break;
+    case 'stone': drawStone(1.6, q.col); break;
     case 'gas': ctx.fillStyle = '#8d99ae'; rr(ctx, -8, -14, 16, 28, 4); ctx.fill(); ctx.strokeStyle = OUT; ctx.lineWidth = 2.5; ctx.stroke();
       ctx.fillStyle = '#ef233c'; ctx.fillRect(-8, -3, 16, 6); ctx.fillStyle = '#2b2d42'; ctx.fillRect(-4, -19, 8, 6); break;
     case 'molotov':

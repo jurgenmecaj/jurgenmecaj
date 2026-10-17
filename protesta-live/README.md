@@ -8,15 +8,15 @@ Në krye ka gjithmonë shënimin: *"Kjo është vetëm një lojë · animacion s
 | Ngjarje në live | Efekti |
 |---|---|
 | Dikush hyn | Del figurë e animuar + banderola **"SAPO IU BASHKUA PROTESTËS: @emri"** |
-| Dhuratë 💎1+ | 🎨 Bojë (balonë me bojë) |
-| Dhuratë 💎10+ | 💥 Bombë me bojë (njolla të mëdha) |
-| Dhuratë 💎30+ | 🪨 Gur (çarje në godinë) |
+| Dhuratë 💎1+ | 🪨 Guralec (çarje e vogël) |
+| Dhuratë 💎10+ | 🪨 Gur (çarje e madhe, pluhur) |
+| Dhuratë 💎30+ | ⛰️ Shkëmb (çarje shumë të mëdha, copa) |
 | Dhuratë 💎100+ | 🔥 Molotov (animacion: zjarr, tym, shkulm) |
 | Dhuratë 💎500+ | 🎆 FINALE (të gjithë gjuajnë, fishekzjarre) |
-| Like | Gjuajtje e vogël me bojë |
+| Like | Guralec i vogël |
 | Koment `!bashkia` `!kryeministria` `!arsimi` | Zgjedh objektivin e vet (përndryshe random) |
 
-Çdo godinë ka shkallë **ZEMËRIMI**; kur arrin 100% mbulohet me ngjyra, pastrohet dhe fillon raundi i ri.
+Çdo godinë ka shkallë **ZEMËRIMI**; kur arrin 100% është goditur plotësisht, riparohet dhe fillon raundi i ri.
 Ka edhe renditje (top 3 gjuajtësit), statistika dhe zë (mund ta çosh me `?mute=1`).
 
 ## Foto
@@ -24,7 +24,7 @@ Ka edhe renditje (top 3 gjuajtësit), statistika dhe zë (mund ta çosh me `?mut
   banderolën "Sapo iu bashkua protestës". Serveri i shkarkon fotot nga TikTok përmes `/avatar` (vetëm host-e të TikTok).
   Pa foto, personazhi ka fytyrë të vizatuar me shirit protestuesi.
 - **Foto reale të godinave**: janë në `assets/` si PNG me sfond transparent (`bashkia.png`, `kryeministria.png`, `arsimi.png`).
-  Boja, çarjet dhe zjarri prehen saktësisht mbi formën e godinës. Për t'i ndërruar, zëvendëso skedarët me të njëjtat emra
+  Çarjet dhe zjarri prehen saktësisht mbi formën e godinës. Për t'i ndërruar, zëvendëso skedarët me të njëjtat emra
   (PNG me sfond transparent, ~700–900px, nën 1 MB). Nëse mungojnë, loja përdor godinat e vizatuara.
 
 ## Të reja në lojë
@@ -38,7 +38,7 @@ Ka edhe renditje (top 3 gjuajtësit), statistika dhe zë (mund ta çosh me `?mut
   gjuan radhazi në të tria godinat (jo vetëm random). Dhurata me shumë copë shpërndahet nëpër të tria.
 - **Nivele** (⭐ pranë emrit): fitohen me dhurata, like dhe komente; ruhen edhe kur shikuesi kthehet ("MIRËSEARDHE PËRSËRI · NIVELI n").
 - **Sfida çdo 40–70 s**: *Sondazh* (shkruaj 1/2/3 → të gjithë sulmojnë godinën fituese), *Like* (X like në 25 s) ose *Chat* (shkruaj MJAFT × X). Sukses = fishekzjarre.
-- **FITORE E PËRBASHKËT** kur të tre godinat mbulohen plotësisht; numëruesi 🏆 në ekran.
+- **FITORE E PËRBASHKËT** kur të tre godinat goditen plotësisht; numëruesi 🏆 në ekran.
 - **Numërim mbrapsht për policinë** (10…1 me tik) dhe kohëmatës në shiritin e poshtëm.
 - **Karta e HERO-it** në mes të ekranit për dhurata të mëdha (💎100+ në total).
 
@@ -48,7 +48,7 @@ Të ndaluarit shfaqen në një shirit të kuq/blu. **LIKE i kthen**: kur një i 
 ndërsa like nga të tjerët kthejnë të ndaluarit një nga një. Një dhuratë e kthen gjithashtu.
 
 **Dhuratat godasin policinë** (vetëm gjatë ardhjes së saj dhe vetëm 💎10+, jo lulet; ndryshon me `?copmin=20`):
-bombë me bojë → policia mpaket 2 s dhe njollosët; gur/molotov → policia rrëzohet 5–7 s dhe **e lë të lirë** protestuesin që po merrte; sa e rrëzon 2 herë, tërhiqet.
+gur (💎10+) → policia mpaket 2 s; shkëmb/molotov (💎30+) → policia rrëzohet 5–7 s dhe **e lë të lirë** protestuesin që po merrte; sa e rrëzon 2 herë, tërhiqet.
 💎500+ (FINALE) i largon të gjithë policët.
 - Shpeshtësia: `?police=60` (çdo 60 s), `?police=0` e fikë. Tasti `P` e nis menjëherë (provë).
 - Nga serveri: dërgo `{"type": "police"}` te WebSocket për ta thirrur me dorë.

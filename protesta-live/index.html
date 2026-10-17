@@ -83,42 +83,112 @@ addEventListener('resize', fit); fit();
 
 /* ------------------------------ zëri ------------------------------ */
 const sfx = (() => {
-  let ac = null, muted = Q.has('mute'), last = {};
+  let ac = null, master = null, muted = Q.has('mute'), last = {}, siren = null;
+  const vol = Q.has('vol') ? +Q.get('vol') : 1;
   const A = () => {
     if (muted) return null;
-    try { if (!ac) ac = new (window.AudioContext || window.webkitAudioContext)(); if (ac.state === 'suspended') ac.resume(); return ac; }
-    catch (e) { return null; }
+    try {
+      if (!ac) { ac = new (window.AudioContext || window.webkitAudioContext)(); master = ac.createGain(); master.gain.value = vol; master.connect(ac.destination); if (Q.get('ambient') !== '0') ambient(); }
+      if (ac.state === 'suspended') ac.resume();
+      return ac;
+    } catch (e) { return null; }
   };
-  const tone = (f0, f1, dur, vol, type = 'sine', delay = 0) => {
+  const tone = (f0, f1, dur, v, type = 'sine', delay = 0) => {
     const a = A(); if (!a) return;
     const o = a.createOscillator(), g = a.createGain(), t = a.currentTime + delay;
     o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(f1, 20), t + dur);
-    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g); g.connect(a.destination); o.start(t); o.stop(t + dur + 0.05);
+    g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.05);
   };
-  const noise = (dur, vol, fc, delay = 0) => {
+  // zhurmë me filtër: f → f2 (opsionale), attack = ngritje graduale
+  const nz = (dur, v, o = {}) => {
     const a = A(); if (!a) return;
     const n = Math.floor(a.sampleRate * dur), buf = a.createBuffer(1, n, a.sampleRate), d = buf.getChannelData(0);
-    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
-    const s = a.createBufferSource(), f = a.createBiquadFilter(), g = a.createGain(), t = a.currentTime + delay;
-    s.buffer = buf; f.type = 'lowpass'; f.frequency.value = fc; g.gain.value = vol;
-    s.connect(f); f.connect(g); g.connect(a.destination); s.start(t);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (o.attack ? Math.min(1, i / (a.sampleRate * o.attack)) * (1 - i / n) : (1 - i / n));
+    const s = a.createBufferSource(), fl = a.createBiquadFilter(), g = a.createGain(), t = a.currentTime + (o.delay || 0);
+    s.buffer = buf; fl.type = o.type || 'lowpass'; fl.frequency.setValueAtTime(o.f || 1000, t); if (o.f2) fl.frequency.linearRampToValueAtTime(o.f2, t + dur);
+    if (o.q) fl.Q.value = o.q; g.gain.value = v; s.connect(fl); fl.connect(g); g.connect(master); s.start(t);
   };
+  function ambient() { // murmurimë i largët i turmës
+    const n = ac.sampleRate * 4, buf = ac.createBuffer(1, n, ac.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+    const s = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain(), lfo = ac.createOscillator(), lg = ac.createGain();
+    s.buffer = buf; s.loop = true; f.type = 'bandpass'; f.frequency.value = 520; f.Q.value = .6; g.gain.value = .018;
+    lfo.frequency.value = .22; lg.gain.value = .008; lfo.connect(lg); lg.connect(g.gain);
+    s.connect(f); f.connect(g); g.connect(master); s.start(); lfo.start();
+  }
   const gate = (k, ms, fn) => () => { const n = performance.now(); if (n - (last[k] || 0) < ms) return; last[k] = n; fn(); };
   return {
-    toggle() { muted = !muted; },
+    toggle() { muted = !muted; if (master) master.gain.value = muted ? 0 : vol; if (!muted) A(); },
+    isMuted: () => muted,
+    blocked: () => !muted && ac && ac.state === 'suspended',
     join: gate('join', 120, () => { tone(520, 780, .16, .07, 'triangle'); tone(780, 1040, .18, .05, 'triangle', .09); }),
-    whoosh: gate('wh', 60, () => noise(.3, .05, 2200)),
-    splat: gate('sp', 50, () => { noise(.16, .10, 1000); tone(220, 70, .14, .07); }),
-    crack: gate('cr', 60, () => { noise(.14, .16, 3500); tone(130, 50, .2, .10, 'square'); }),
-    boom: gate('bm', 150, () => { noise(.7, .2, 600); tone(100, 30, .55, .18, 'sawtooth'); }),
-    tick: gate('tk', 100, () => tone(900, 900, .07, .05, 'square')),
+    whoosh: gate('wh', 60, () => nz(.3, .05, { f: 2200 })),
+    // goditjet e gurëve: s = guralec, m = gur, l = shkëmb
+    hit: (size) => gate('hit' + size, 70, () => {
+      if (size === 's') { nz(.08, .12, { type: 'highpass', f: 2500 }); tone(420, 160, .07, .06, 'square'); }
+      else if (size === 'm') { nz(.14, .18, { f: 3500 }); nz(.25, .12, { f: 500 }); tone(130, 50, .2, .12, 'square'); }
+      else { nz(.18, .2, { f: 4200 }); nz(.7, .22, { f: 380 }); tone(80, 28, .6, .2, 'sawtooth'); for (let i = 0; i < 4; i++) nz(.05, .07, { type: 'highpass', f: 3000, delay: .15 + i * .09 + Math.random() * .05 }); }
+    })(),
+    crack: gate('cr', 60, () => { nz(.14, .16, { f: 3500 }); tone(130, 50, .2, .10, 'square'); }),
+    boom: gate('bm', 150, () => { nz(.7, .2, { f: 600 }); tone(100, 30, .55, .18, 'sawtooth'); }),
+    fire: gate('fr', 150, () => { nz(.12, .15, { type: 'highpass', f: 3000 }); nz(1, .2, { type: 'bandpass', f: 400, f2: 1600, q: .8, attack: .08 }); tone(70, 40, .5, .12, 'sawtooth'); }),
+    canister: gate('cn', 80, () => { tone(1500, 900, .06, .06, 'square'); nz(.05, .08, { type: 'highpass', f: 4000 }); }),
+    hiss: gate('hs', 120, () => nz(.8, .1, { type: 'highpass', f: 2500, f2: 5200 })),
+    whistle: gate('ws', 400, () => { tone(2300, 2400, .2, .07, 'sine'); tone(2650, 2300, .28, .07, 'sine', .24); }),
+    cuff: gate('cf', 200, () => { tone(1800, 1400, .04, .06, 'square'); tone(1900, 1500, .04, .06, 'square', .09); }),
+    sirenStart(sec) { // sirenë që ngrihet e ulet gjatë gjithë ardhjes së policisë
+      const a = A(); if (!a) return; sirenStop();
+      const o = a.createOscillator(), g = a.createGain(), t = a.currentTime;
+      o.type = 'sawtooth'; o.frequency.setValueAtTime(650, t);
+      for (let k = 0; k < sec / .7; k++) o.frequency.linearRampToValueAtTime(k % 2 ? 650 : 950, t + (k + 1) * .7);
+      g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(.03, t + .3); g.gain.setValueAtTime(.03, t + sec - .5); g.gain.linearRampToValueAtTime(0.0001, t + sec);
+      o.connect(g); g.connect(master); o.start(t); o.stop(t + sec + .1); siren = { o, g };
+    },
+    sirenStop() { sirenStop(); },
     siren: gate('sr', 300, () => { tone(650, 900, .35, .05, 'sawtooth'); tone(900, 650, .35, .05, 'sawtooth', .35); }),
-    hiss: gate('hs', 120, () => noise(.5, .09, 2600)),
+    cheer: gate('ch', 800, () => { nz(1.8, .13, { type: 'bandpass', f: 900, f2: 700, q: .7, attack: .35 }); nz(1.5, .07, { type: 'highpass', f: 2500, attack: .4, delay: .1 }); for (let i = 0; i < 14; i++) nz(.04, .09, { type: 'highpass', f: 2200, delay: .2 + Math.random() * 1.4 }); }),
+    pop: gate('pp', 90, () => { nz(.12, .16, { f: 2200 }); tone(220, 60, .15, .1, 'sine'); }),
+    bell: gate('bl', 400, () => { tone(1318, 1318, .5, .06); tone(1976, 1976, .4, .03); }),
+    ping: gate('pg', 250, () => tone(1200, 1700, .12, .06, 'triangle')),
+    levelup: gate('lu', 400, () => { [660, 880, 1175].forEach((f, i) => tone(f, f * 1.005, .18, .07, 'triangle', i * .1)); }),
+    freed: gate('fd', 300, () => { tone(660, 990, .14, .07, 'triangle'); tone(990, 1320, .2, .06, 'triangle', .13); }),
+    fanfare: gate('fa', 1000, () => { [523, 659, 784, 1046, 1318].forEach((f, i) => tone(f, f * 1.01, .22, .07, 'triangle', i * .12)); [523, 659, 784, 1046].forEach(f => tone(f, f, .9, .04, 'triangle', .65)); }),
+    tick: gate('tk', 100, () => tone(900, 900, .07, .05, 'square')),
     win: gate('wn', 500, () => { [523, 659, 784, 1046].forEach((f, i) => tone(f, f * 1.01, .25, .07, 'triangle', i * .09)); }),
   };
+  function sirenStop() { if (siren) { try { siren.g.gain.cancelScheduledValues(0); siren.g.gain.value = 0; siren.o.stop(); } catch (e) {} siren = null; } }
+})();
+
+// ---- zëri në shqip: klipe (assets/voice/*.mp3) nëse ekzistojnë, përndryshe zëri shqip i shfletuesit (Edge: Anila / Ilir)
+const voice = (() => {
+  const off = Q.get('voice') === '0' || Q.has('mute');
+  const synth = window.speechSynthesis, vol = Q.has('vol') ? Math.min(1, +Q.get('vol')) : 1;
+  let lines = {}, clips = {}, sq = [], cur = null, last = {};
+  const loadVoices = () => { try { sq = synth.getVoices().filter(v => /^sq/i.test(v.lang)); } catch (e) {} };
+  if (synth) { loadVoices(); synth.onvoiceschanged = loadVoices; }
+  fetch('voice_lines.json').then(r => r.json()).then(j => {
+    lines = j;
+    for (const k of Object.keys(j)) { const a = new Audio(); a.preload = 'auto'; a.oncanplaythrough = () => { clips[k] = a.src; }; a.onerror = () => {}; a.src = `assets/voice/${k}.mp3`; }
+  }).catch(() => {});
+  const busy = () => (cur && !cur.ended && !cur.paused) || (synth && synth.speaking);
+  const stopCur = () => { try { if (cur) cur.pause(); if (synth) synth.cancel(); } catch (e) {} };
+  function say(key, o = {}) {
+    if (off || sfx.isMuted()) return;
+    const l = lines[key]; if (!l) return;
+    const now = performance.now(); if (now - (last[key] || 0) < (o.gap ?? 4000)) return;
+    if (busy()) { if (!o.prio) return; stopCur(); }
+    last[key] = now;
+    if (!(o.text && sq.length) && clips[key]) { cur = new Audio(clips[key]); cur.volume = vol; cur.play().catch(() => {}); return; }
+    if (!sq.length) return;
+    const u = new SpeechSynthesisUtterance(o.text || l.text), want = l.voice === 'ilir' ? /Ilir/i : /Anila/i;
+    u.voice = sq.find(v => want.test(v.name)) || sq[0]; u.lang = 'sq-AL'; u.rate = 1 + (parseInt(l.rate) || 0) / 100; u.pitch = l.voice === 'ilir' ? .9 : 1.05; u.volume = vol;
+    try { synth.speak(u); } catch (e) {}
+  }
+  return { say, status: () => `${Object.keys(clips).length}/${Object.keys(lines).length} klipe · ${sq.length ? 'zë shfletuesi: ' + sq[0].name : 'pa zë shfletuesi'}` };
 })();
 addEventListener('pointerdown', () => sfx.whoosh());
+addEventListener('keydown', () => sfx.whoosh());
 
 /* ------------------------------ gjendja ------------------------------ */
 function loadXp() { try { return JSON.parse(localStorage.getItem('pl_xp') || '{}'); } catch (e) { return {}; } }
@@ -373,6 +443,7 @@ function confetti(x, y, n) {
   for (let i = 0; i < n; i++) P({ x, y, vx: rnd(-260, 260), vy: rnd(-420, -120), g: 520, life: rnd(1.4, 2.4), size: rnd(6, 11), col: pick(INK), type: 'confetti', rot: rnd(0, 6), vr: rnd(-9, 9) });
 }
 function firework(x, y) {
+  sfx.pop();
   const col = pick(INK);
   for (let i = 0; i < 46; i++) { const a = (i / 46) * 6.283, s = rnd(180, 330); P({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, g: 220, life: rnd(.9, 1.5), size: rnd(3, 5), col, type: 'spark' }); }
   S.flash = Math.max(S.flash, .12); S.flashCol = col;
@@ -558,7 +629,7 @@ function addXp(name, v) {
     const p = S.byName.get(name);
     if (p) floatText(p.x, p.y - 190 * scaleAt(p.y), `NIVELI ${lvlOf(n)}!`, '#ffd60a');
     if (lvlOf(n) >= 4) pushBanner('gift', `⭐ NIVEL I RI: ${lvlOf(n)}`, '@' + name, p && p.img);
-    sfx.join();
+    sfx.levelup(); if (lvlOf(n) >= 3) voice.say('levelup', { gap: 6000 });
   }
 }
 function launch(p, type, b, o = {}) {
@@ -570,27 +641,30 @@ function launch(p, type, b, o = {}) {
   p.throwT = .35; p.hype = 1; p.nextIdle = S.t + rnd(3, 8);
   sfx.whoosh();
 }
+function comboSound() {
+  if (S.combo === 10 || S.combo === 20 || S.combo === 50) { sfx.ping(); voice.say('combo' + S.combo, { gap: 1500, prio: S.combo >= 20 }); }
+}
 function impact(q) {
   if (q.type === 'gas') return gasImpact(q);
   if (q.cop) return copImpact(q);
   const b = q.b, lx = q.x1 - b.x, ly = q.y1 - b.y, c = b.sx;
-  S.hits++; b.dirty = true; S.combo = (S.comboT > 0 ? S.combo : 0) + 1; S.comboT = 3; S.comboPop = 1;
+  S.hits++; b.dirty = true; S.combo = (S.comboT > 0 ? S.combo : 0) + 1; S.comboT = 3; S.comboPop = 1; comboSound();
   switch (q.type) {
     case 'paint': // guralec
       crack(c, lx, ly, q.small ? .4 : .6); addHeat(b, q.small ? .6 : 1.4);
       burst(q.x1, q.y1, q.small ? 5 : 9, ['#8a8a96', '#b8b8c4', '#5f5f6c'], 240, { g: 1000, size: 5 }); dust(q.x1, q.y1, 2, .6);
-      floatText(q.x1, q.y1 - 20, 'TAK!', '#e5e5f0'); sfx.crack(); break;
+      floatText(q.x1, q.y1 - 20, 'TAK!', '#e5e5f0'); sfx.hit('s'); break;
     case 'bomb': // gur
       crack(c, lx, ly, 1); addHeat(b, 5); burst(q.x1, q.y1, 18, ['#8a8a96', '#b8b8c4', '#5f5f6c'], 340, { g: 1100, size: 7 }); dust(q.x1, q.y1, 4, 1);
-      floatText(q.x1, q.y1 - 24, 'KRAK!', '#e5e5f0'); b.shake = .3; sfx.crack(); break;
+      floatText(q.x1, q.y1 - 24, 'KRAK!', '#e5e5f0'); b.shake = .3; sfx.hit('m'); break;
     case 'stone': // shkëmb
       crack(c, lx, ly, 1.7); crack(c, lx + rnd(-30, 30), ly + rnd(-24, 24), .8); addHeat(b, 8);
       burst(q.x1, q.y1, 30, ['#8a8a96', '#b8b8c4', '#5f5f6c', '#a79f90'], 420, { g: 1200, size: 9 }); dust(q.x1, q.y1, 8, 1.5);
-      floatText(q.x1, q.y1 - 30, 'KRAAK!', '#ffffff'); b.shake = .5; S.shake = Math.max(S.shake, .3); sfx.crack(); break;
+      floatText(q.x1, q.y1 - 30, 'KRAAK!', '#ffffff'); b.shake = .5; S.shake = Math.max(S.shake, .3); sfx.hit('l'); break;
     case 'molotov':
       soot(c, lx, ly); addHeat(b, 12); b.fires.push({ x: lx, y: ly, t: 0, dur: rnd(2.6, 3.6) });
       burst(q.x1, q.y1, 26, ['#ffd23f', '#ff8a00', '#ff3d00'], 460, { g: 300, size: 8, up: 120, type: 'spark' });
-      floatText(q.x1, q.y1 - 30, 'BUM!', '#ffb703'); b.shake = .6; S.shake = Math.max(S.shake, .5); S.flash = .35; S.flashCol = '#ff8a00'; sfx.boom(); break;
+      floatText(q.x1, q.y1 - 30, 'BUM!', '#ffb703'); b.shake = .6; S.shake = Math.max(S.shake, .5); S.flash = .35; S.flashCol = '#ff8a00'; sfx.fire(); sfx.boom(); break;
   }
 }
 /* ------------------------------ policia (animacion satirik) ------------------------------ */
@@ -608,7 +682,7 @@ function startRaid() {
   const n = clamp(Math.round(freePeople().length / 5), 5, 9);
   S.raid = { t: 0, dur: 16, arrests: 0, max: clamp(Math.round(freePeople().length * .7), 6, 16) };
   pushBanner('raid', '🚨 POLICIA ARRIN NË SHESH!', `Dhuratat 💎${CFG.copHitMin}+ i rrëzojnë policët!`);
-  for (let i = 0; i < 4; i++) later(i * .75, () => sfx.siren());
+  sfx.sirenStart(S.raid.dur); sfx.whistle(); voice.say('police_come', { prio: true, gap: 0 }); later(2.4, () => voice.say('police_order', { gap: 0 }));
   for (let i = 0; i < n; i++) later(i * .25, spawnCop);
   S.shake = Math.max(S.shake, .3);
 }
@@ -621,17 +695,17 @@ function launchAtCop(p, type, cop) {
 function releasePerson(c) {
   const p = c.target; if (!p) return;
   const sp = freeSpot(); p.arrested = false; p.targeted = false; p.tx = sp.x; p.ty = sp.y; p.walking = true; p.hype = 1; p.jump = 1; p.say = 'LIRË!'; p.sayT = 2.5;
-  c.target = null; if (S.raid) S.raid.freed = (S.raid.freed || 0) + 1;
+  c.target = null; if (S.raid) S.raid.freed = (S.raid.freed || 0) + 1; sfx.freed(); voice.say('freed', { gap: 4000 });
   if (!p.ambient) pushBanner('join', '✊ U ÇLIRUA NGA POLICIA:', '@' + p.name, p.img);
 }
 function knock(c, sec) {
   c.hp = (c.hp ?? 2) - 1; c.down = Math.max(c.down || 0, sec); c.stun = 0; c.dazed = sec; c.fallDir = Math.random() < .5 ? 1 : -1;
   if (c.target) { if (c.state === 'escort') releasePerson(c); else { c.target.targeted = false; c.target = null; } }
-  floatText(c.x, c.y - 150, pick(['KAPLLE!', 'BUM!', 'OUUU!']), '#ffd60a'); S.shake = Math.max(S.shake, .25); sfx.crack();
+  floatText(c.x, c.y - 150, pick(['KAPLLE!', 'BUM!', 'OUUU!']), '#ffd60a'); S.shake = Math.max(S.shake, .25); sfx.hit('m'); voice.say('cop_down', { gap: 4000 });
 }
 function copImpact(q) {
   const c = q.cop; if (!S.cops.includes(c)) return;
-  S.hits++; S.combo = (S.comboT > 0 ? S.combo : 0) + 1; S.comboT = 3; S.comboPop = 1;
+  S.hits++; S.combo = (S.comboT > 0 ? S.combo : 0) + 1; S.comboT = 3; S.comboPop = 1; comboSound();
   if (q.type === 'paint' || q.type === 'bomb') {
     c.stun = Math.max(c.stun || 0, 2); c.target && c.state !== 'escort' && (c.target.targeted = false, c.target = null, c.state = 'idle');
     burst(q.x1, q.y1, 16, ['#8a8a96', '#b8b8c4', '#5f5f6c'], 340, { g: 1000, size: 6 }); dust(q.x1, q.y1, 4, 1); floatText(q.x1, q.y1 - 30, 'TAK!', '#e5e5f0'); sfx.crack();
@@ -647,11 +721,11 @@ function routCops() {
 function copThrow(c, target) {
   const sc = scaleAt(c.y), x0 = c.x + 22 * sc, y0 = c.y - 88 * sc, x1 = target.x + rnd(-25, 25), y1 = target.y - 20;
   S.proj.push({ type: 'gas', x: x0, y: y0, x0, y0, x1, y1, t: 0, dur: clamp(Math.hypot(x1 - x0, y1 - y0) / 700, .6, 1.1), arc: rnd(120, 220), rot: 0, vr: rnd(-10, 10), col: '#d9deef', b: null });
-  c.throwT = .35; sfx.whoosh();
+  c.throwT = .35; sfx.canister(); sfx.whoosh();
 }
 function gasImpact(q) {
   for (let i = 0; i < 20; i++) P({ x: q.x1 + rnd(-30, 30), y: q.y1 + rnd(-20, 20), vx: rnd(-40, 40), vy: rnd(-55, -8), life: rnd(1.6, 2.6), size: rnd(18, 32), grow: 22, col: '#d9deef', alpha: .26, type: 'smoke' });
-  S.gas.push({ x: q.x1, y: q.y1, t: 0, dur: 3.2 }); floatText(q.x1, q.y1 - 50, 'GAZ!', '#e8ecff'); sfx.hiss();
+  S.gas.push({ x: q.x1, y: q.y1, t: 0, dur: 3.2 }); floatText(q.x1, q.y1 - 50, 'GAZ!', '#e8ecff'); sfx.hiss(); voice.say('gas', { gap: 7000 });
 }
 function updatePolice(dt) {
   if (!S.raid && CFG.police > 0 && S.t > S.nextRaid && freePeople().length >= 4) startRaid();
@@ -671,7 +745,7 @@ function updatePolice(dt) {
       c.down -= dt; c.walking = false; c.fall = Math.min(1, (c.fall || 0) + dt * 6); c.dazed = c.down;
       if (c.down <= 0) {
         c.dazed = 0;
-        if (c.hp <= 0) { c.state = 'leave'; c.tx = c.x < W / 2 ? -120 : W + 120; if (S.raid && !c.routed) { c.routed = true; S.raid.routed = (S.raid.routed || 0) + 1; } floatText(c.x, c.y - 150, 'U TËRHOQ!', '#4cc9f0'); }
+        if (c.hp <= 0) { c.state = 'leave'; c.tx = c.x < W / 2 ? -120 : W + 120; if (S.raid && !c.routed) { c.routed = true; S.raid.routed = (S.raid.routed || 0) + 1; } floatText(c.x, c.y - 150, 'U TËRHOQ!', '#4cc9f0'); voice.say('cop_retreat', { gap: 5000 }); }
         else c.state = 'idle';
       }
       continue;
@@ -697,7 +771,7 @@ function updatePolice(dt) {
       if (!p || p.leaving || p.arrested || !S.crowd.includes(p)) { if (p) p.targeted = false; c.target = null; c.state = 'idle'; continue; }
       if (go(p.x, p.y, 270) || Math.hypot(p.x - c.x, p.y - c.y) < 34) {
         p.arrested = true; p.walking = true; p.sign = null; p.hype = .25; p.dazed = 0;
-        c.state = 'escort'; c.dir = c.x < W / 2 ? -1 : 1; c.tx = c.dir < 0 ? -110 : W + 110; c.ty = c.y; sfx.whoosh();
+        c.state = 'escort'; c.dir = c.x < W / 2 ? -1 : 1; c.tx = c.dir < 0 ? -110 : W + 110; c.ty = c.y; sfx.whistle(); sfx.cuff(); voice.say('arrest', { gap: 5000 });
         floatText(c.x, c.y - 140, 'KAPE!', '#4cc9f0');
       }
     } else if (c.state === 'escort') {
@@ -718,7 +792,7 @@ function updatePolice(dt) {
     }
   }
   if (raid && S.cops.length === 0 && (!active || raid.t > 4)) {
-    S.raid = null; S.nextRaid = S.t + CFG.police * rnd(.8, 1.2);
+    S.raid = null; S.nextRaid = S.t + CFG.police * rnd(.8, 1.2); sfx.sirenStop(); voice.say('police_leave', { gap: 0, prio: true });
     for (const p of S.crowd) p.targeted = false;
     if (raid.freed || raid.routed) pushBanner('win', '🏆 POLICIA U THYE!', `${raid.freed || 0} të çliruar · ${raid.routed || 0} policë u tërhoqën`);
     if (S.detained.length) pushBanner('raid', `🚔 ${S.detained.length} PROTESTUES TË NDALUAR`, 'Jep LIKE ❤️ që t\'i kthesh në shesh!');
@@ -728,16 +802,16 @@ function updatePolice(dt) {
 function revive(i) {
   const d = S.detained.splice(i, 1)[0]; if (!d) return;
   const p = addPerson(d.name); Object.assign(p, { color: d.color, skin: d.skin, hair: d.hair, hairStyle: d.hairStyle, sign: d.sign, img: d.img, score: S.scores[d.name] || 0 });
-  p.jump = 1; pushBanner('join', '✊ U KTHYE FALË LIKE-VE:', '@' + d.name, p.img); sfx.join();
+  p.jump = 1; pushBanner('join', '✊ U KTHYE FALË LIKE-VE:', '@' + d.name, p.img); sfx.freed(); voice.say('back', { gap: 3500 });
 }
 function celebrate(n) {
   for (let i = 0; i < n; i++) later(i * .3, () => firework(rnd(120, 960), rnd(380, 760)));
   for (let i = 0; i < 4; i++) later(i * .4, () => confetti(rnd(100, 980), 330, 26));
   S.crowd.forEach((p, i) => { if (!p.leaving && !p.arrested) later(i * .02, () => { p.jump = 1; p.hype = 1; }); });
-  sfx.win();
+  sfx.fanfare(); sfx.cheer();
 }
 function victory() {
-  pushBanner('win', '🏆 FITORE E PËRBASHKËT!', 'Të tre godinat u goditën plotësisht!'); celebrate(9); S.shake = Math.max(S.shake, .4);
+  pushBanner('win', '🏆 FITORE E PËRBASHKËT!', 'Të tre godinat u goditën plotësisht!'); celebrate(9); voice.say('victory', { prio: true, gap: 0 }); S.shake = Math.max(S.shake, .4);
 }
 function startChallenge(kind) {
   const real = S.crowd.filter(p => !p.ambient && !p.leaving).length;
@@ -746,7 +820,7 @@ function startChallenge(kind) {
   if (k === 'like') { c.goal = clamp(15 + real * 3, 20, 80); c.title = `❤️ ${c.goal} LIKE në 25 sekonda → fishekzjarre!`; }
   if (k === 'chat') { c.goal = clamp(6 + real, 8, 40); c.title = `📣 Shkruaj MJAFT në chat × ${c.goal}`; }
   if (k === 'poll') { c.dur = 18; c.title = '🗳️ ZGJIDH: kush sulmohet nga të gjithë? (shkruaj 1, 2 ose 3)'; }
-  S.challenge = c; sfx.join();
+  S.challenge = c; sfx.bell(); voice.say('challenge_' + k, { prio: true, gap: 0 });
 }
 function endChallenge() {
   const c = S.challenge; S.challenge = null; S.nextChallenge = S.t + rnd(40, 70);
@@ -754,9 +828,9 @@ function endChallenge() {
     const mx = Math.max(...c.votes), idx = c.votes.map((v, i) => v === mx ? i : -1).filter(i => i >= 0), b = BUILD[pick(idx)];
     pushBanner('win', '💥 SULM I PËRBASHKËT KUNDËR:', b.label);
     freePeople().slice(0, 26).forEach((p, i) => later(i * .1, () => launch(p, i % 3 === 0 ? 'bomb' : 'paint', b)));
-    S.shake = Math.max(S.shake, .3); sfx.boom();
-  } else if (c.n >= c.goal) { pushBanner('win', '⚡ SFIDA U KRYE!', 'Fishekzjarre për të gjithë!'); celebrate(7); }
-  else pushBanner('join', 'SFIDA NUK U KRYE', 'Provojmë përsëri së shpejti!');
+    S.shake = Math.max(S.shake, .3); sfx.boom(); voice.say('poll_attack', { prio: true, gap: 0 });
+  } else if (c.n >= c.goal) { pushBanner('win', '⚡ SFIDA U KRYE!', 'Fishekzjarre për të gjithë!'); celebrate(7); voice.say('challenge_win', { prio: true, gap: 0 }); }
+  else { pushBanner('join', 'SFIDA NUK U KRYE', 'Provojmë përsëri së shpejti!'); voice.say('challenge_fail', { gap: 0 }); }
 }
 function finale(user) {
   pushBanner('gift', `🎆 FINALE nga @${user}`, 'Të gjithë gjuajnë gurë!');
@@ -766,7 +840,7 @@ function finale(user) {
   });
   for (let i = 0; i < 6; i++) later(i * .35, () => firework(rnd(120, 960), rnd(380, 720)));
   for (let i = 0; i < 4; i++) later(i * .4, () => confetti(rnd(100, 980), 330, 26));
-  S.shake = Math.max(S.shake, .5); sfx.boom();
+  S.shake = Math.max(S.shake, .5); sfx.boom(); sfx.cheer(); voice.say('finale', { prio: true, gap: 0 });
 }
 
 /* ------------------------------ ngjarjet ------------------------------ */
@@ -777,7 +851,7 @@ function onJoin(user, avatar) {
   const p = addPerson(user); setAvatar(p, avatar); p.jump = 1;
   if (isNew) { S.joined++; if (!back) addXp(user, 5); }
   pushBanner('join', back ? `MIRËSEARDHE PËRSËRI · NIVELI ${lvlOf(S.xp[user])}:` : 'SAPO IU BASHKUA PROTESTËS:', '@' + user, p.img);
-  sfx.join();
+  sfx.join(); voice.say('welcome', { gap: 9000 });
 }
 function onGift(user, name, diamonds, count, avatar) {
   count = Math.max(1, count | 0); diamonds = Math.max(1, diamonds | 0);
@@ -786,7 +860,7 @@ function onGift(user, name, diamonds, count, avatar) {
   S.scores[user] = (S.scores[user] || 0) + diamonds * count; p.score = S.scores[user]; p.jump = 1;
   addXp(user, diamonds * count);
   const label = `${tier.icon} ${tier.label.toUpperCase()}${count > 1 ? ' ×' + count : ''}${name ? ' · ' + name : ''}`;
-  if (diamonds * count >= 100) S.hero = { t: 0, dur: 3.2, name: user, img: p.img, line: label };
+  if (diamonds * count >= 100) { S.hero = { t: 0, dur: 3.2, name: user, img: p.img, line: label }; sfx.fanfare(); voice.say('hero', { text: `Faleminderit, ${user}, për dhuratën e madhe!`, prio: true, gap: 2500 }); }
   if (tier.key === 'finale') { if (copsActive()) routCops(); return finale(user); }
   const n = Math.min(count, 10);
   if (copsActive() && diamonds >= CFG.copHitMin) { // dhuratat e mëdha godasin policinë (jo lulet)
@@ -880,7 +954,7 @@ function update(dt) {
   for (let i = S.timers.length - 1; i >= 0; i--) if (S.timers[i].at <= S.t) { const f = S.timers[i].fn; S.timers.splice(i, 1); f(); }
   S.likeBudget = Math.min(10, S.likeBudget + dt * 6);
   updatePolice(dt);
-  if (!S.raid && CFG.police > 0) { const cd = Math.ceil(S.nextRaid - S.t); if (cd <= 5 && cd > 0 && cd !== S.lastCd) { S.lastCd = cd; sfx.tick(); } }
+  if (!S.raid && CFG.police > 0) { const cd = Math.ceil(S.nextRaid - S.t); if (cd <= 5 && cd > 0 && cd !== S.lastCd) { S.lastCd = cd; sfx.tick(); } if (cd === 10 && S.lastCd !== 10) { S.lastCd = 10; voice.say('police_10', { gap: 8000 }); } }
   const ch = S.challenge;
   if (ch) { ch.t += dt; if ((ch.goal && ch.n >= ch.goal) || ch.t >= ch.dur) endChallenge(); }
   else if (!S.raid && S.t > S.nextChallenge && S.crowd.some(p => !p.ambient && !p.leaving)) startChallenge();
@@ -891,6 +965,7 @@ function update(dt) {
   if (S.chant) { S.chant.t += dt; if (S.chant.t > 1.8) S.chant = null; }
   if (S.t > S.nextChant) {
     S.nextChant = S.t + rnd(22, 34); S.chant = { t: 0, text: pick(['MJAFT!', 'DREJTËSI!', 'ARSIM PËR TË GJITHË!', 'BASHKË!']) };
+    voice.say({ 'MJAFT!': 'chant_mjaft', 'DREJTËSI!': 'chant_drejtesi', 'ARSIM PËR TË GJITHË!': 'chant_arsim', 'BASHKË!': 'chant_bashke' }[S.chant.text], { gap: 0 }); sfx.cheer();
     S.crowd.forEach((p, i) => { if (!p.leaving) later(i * .02, () => { p.jump = 1; p.hype = 1; }); });
     sfx.win();
   }
@@ -1119,6 +1194,7 @@ function drawHUD(t) {
   ctx.fillStyle = '#ffd60a'; rr(ctx, (W - dw) / 2, 232, dw, 52, 14); ctx.fill();
   ctx.strokeStyle = '#111'; ctx.lineWidth = 3; ctx.stroke();
   ctx.fillStyle = '#111'; ctx.textBaseline = 'middle'; ctx.fillText(dt, W / 2, 259);
+  if (sfx.blocked()) { ctx.fillStyle = 'rgba(8,10,28,.85)'; rr(ctx, 40, 184, 128, 36, 12); ctx.fill(); ctx.fillStyle = '#ffd60a'; ctx.font = '800 17px "Segoe UI",Arial,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('🔊 KLIKO', 104, 203); }
   drawCombo();
   drawChallenge();
   drawLabels();
@@ -1158,7 +1234,7 @@ function drawHUD(t) {
   }
   if (Q.has('debug')) {
     const L = [`loja ↔ server: ${S.status}`, `TikTok: ${S.tt === 'connected' ? 'LIDHUR ✔' : 'duke pritur live-in…'}`,
-      ...BUILD.map(b => `foto ${b.id}: ${S.dbg.photos[b.id] || '…'}`), `foto profili: ${S.dbg.avOk} ok · ${S.dbg.avFail} dështuan ${S.dbg.lastFail}`];
+      ...BUILD.map(b => `foto ${b.id}: ${S.dbg.photos[b.id] || '…'}`), `foto profili: ${S.dbg.avOk} ok · ${S.dbg.avFail} dështuan ${S.dbg.lastFail}`, `zëri: ${voice.status()}`];
     ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.font = '700 18px monospace';
     L.forEach((t, i) => outlined(ctx, t, 14, 1835 + i * 22, /MUNGON|dështuan [^0]/.test(t) ? '#ff6b6b' : '#7cff9a', '#000', 4));
   }

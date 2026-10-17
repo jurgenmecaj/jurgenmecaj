@@ -53,6 +53,17 @@ gur (💎10+) → policia mpaket 2 s; shkëmb/molotov (💎30+) → policia rrë
 - Shpeshtësia: `?police=60` (çdo 60 s), `?police=0` e fikë. Tasti `P` e nis menjëherë (provë).
 - Nga serveri: dërgo `{"type": "police"}` te WebSocket për ta thirrur me dorë.
 
+## 🔊 Zëri dhe efektet zanore
+- **Efekte** (sintetizohen vetë, pa skedarë): sirenë dhe fishkëllimë kur vjen policia, kanaçe + fshikëllimë gazi, gurë me tinguj të ndryshëm
+  (guralec / gur / shkëmb), molotov me zjarr, arrestim (fishkëllimë + hekura), rënie e policit, çlirim, fishekzjarre, duartrokitje turme,
+  fanfarë fitoreje, zile sfide, tik-tak i numërimit mbrapsht dhe murmuritje e largët e turmës.
+- **Zë në shqip**: slogane të turmës (Mjaft! / Drejtësi! / Arsim për të gjithë! / Bashkë!), policia ("Të kapëm!", "Tërhiquni!"), "Gaz! Kujdes!",
+  "Jam i lirë!", "Fitore!", sfidat, komboja dhe "Faleminderit, @emri, për dhuratën e madhe!". Lista e fjalive është te `voice_lines.json`.
+  1. **Pa asgjë shtesë**: Edge në Windows ka zëra shqip online (Anila, Ilir) dhe loja i përdor vetë.
+  2. **Me klipe (më e qëndrueshme)**: dyfisho **`3-ZERAT.bat`** një herë (kërkon internet) — gjeneron `assets/voice/*.mp3`. Pastaj loja i përdor ato.
+- Shuaje/ndize me tastin `M`. `?voice=0` fik vetëm të folurit, `?ambient=0` fik murmuritjen, `?vol=0.6` ul volumin.
+- **Që zëri të dalë në live**: kapja e dritares nuk merr zë. Në LIVE Studio/OBS shto kapje të zërit të kompjuterit (Desktop/System audio) ose të aplikacionit Edge.
+
 ## Provë e shpejtë (pa TikTok)
 Hape `index.html` në shfletues me `?demo=1` (simulim automatik), ose pa parametra dhe shtyp:
 `J` hyrje · `P` policia · `1`–`5` dhurata (nivelet) · `L` like · `M` zë on/off.

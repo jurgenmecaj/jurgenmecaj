@@ -99,12 +99,31 @@ def stop_old_instance(port: int) -> bool:
         return False
 
 
+def find_edge():
+    """Gjen msedge.exe (ose Chrome) në Windows."""
+    bases = [os.environ.get("ProgramFiles(x86)"), os.environ.get("ProgramFiles"), os.environ.get("LOCALAPPDATA")]
+    for b in filter(None, bases):
+        for rel in (r"Microsoft\Edge\Application\msedge.exe", r"Google\Chrome\Application\chrome.exe"):
+            p = Path(b) / rel
+            if p.exists():
+                return str(p)
+    return None
+
+
 def open_window(http_port: int, ws_port: int) -> None:
-    """Hap lojën si dritare pa shirit adresash (Edge/Chrome); URL e re çdo herë për të shmangur cache-n."""
+    """Hap lojën si dritare pa shirit adresash. Përdor profil të veçantë të shfletuesit, që zëri të lejohet vetvetiu
+    (--autoplay-policy) dhe të mos mbetet versioni i vjetër në cache."""
     url = f"http://localhost:{http_port}/?ws=ws://localhost:{ws_port}&v={int(time.time())}"
     try:
         if sys.platform == "win32":
-            subprocess.Popen(["cmd", "/c", "start", "", "msedge", f"--app={url}", "--window-size=540,960"])
+            exe = find_edge()
+            profile = str(ROOT / ".shfletues-profil")
+            args = [f"--app={url}", "--window-size=540,960", "--autoplay-policy=no-user-gesture-required",
+                    f"--user-data-dir={profile}", "--no-first-run", "--no-default-browser-check"]
+            if exe:
+                subprocess.Popen([exe, *args])
+            else:
+                subprocess.Popen(["cmd", "/c", "start", "", "msedge", *args])
         else:
             import webbrowser
             webbrowser.open(url)

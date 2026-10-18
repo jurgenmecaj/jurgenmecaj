@@ -1,30 +1,192 @@
 {
-  "chant_mjaft":      { "text": "Mjaft! Mjaft! Mjaft!",                         "voice": "anila", "rate": "+15%" },
-  "chant_drejtesi":   { "text": "Drejtësi! Drejtësi! Drejtësi!",                "voice": "anila", "rate": "+10%" },
-  "chant_arsim":      { "text": "Arsim për të gjithë!",                         "voice": "anila", "rate": "+10%" },
-  "chant_bashke":     { "text": "Bashkë! Bashkë! Bashkë!",                      "voice": "anila", "rate": "+15%" },
-  "police_come":      { "text": "Policia po vjen! Kujdes!",                     "voice": "anila", "rate": "+15%" },
-  "police_order":     { "text": "Vëmendje! Largohuni nga sheshi menjëherë!",    "voice": "ilir",  "rate": "+0%" },
-  "police_10":        { "text": "Policia vjen për dhjetë sekonda!",             "voice": "ilir",  "rate": "+5%" },
-  "police_leave":     { "text": "Policia u largua! Protesta vazhdon!",          "voice": "anila", "rate": "+10%" },
-  "arrest":           { "text": "Të kapëm! Eja me ne!",                         "voice": "ilir",  "rate": "+5%" },
-  "gas":              { "text": "Gaz! Kujdes, gaz!",                            "voice": "anila", "rate": "+15%" },
-  "cop_down":         { "text": "Ahh! Më goditën!",                             "voice": "ilir",  "rate": "+10%" },
-  "cop_retreat":      { "text": "Tërhiquni! Tërhiquni!",                        "voice": "ilir",  "rate": "+10%" },
-  "freed":            { "text": "Jam i lirë! Faleminderit!",                    "voice": "anila", "rate": "+10%" },
-  "back":             { "text": "U ktheva! Mjaft!",                             "voice": "anila", "rate": "+10%" },
-  "victory":          { "text": "Fitore! Fitore e përbashkët!",                 "voice": "anila", "rate": "+10%" },
-  "finale":           { "text": "Finalja! Të gjithë bashkë!",                   "voice": "anila", "rate": "+15%" },
-  "hero":             { "text": "Faleminderit për dhuratën e madhe!",           "voice": "anila", "rate": "+5%" },
-  "welcome":          { "text": "Mirë se erdhe në protestë!",                   "voice": "anila", "rate": "+5%" },
-  "levelup":          { "text": "Nivel i ri!",                                  "voice": "anila", "rate": "+10%" },
-  "challenge_like":   { "text": "Sfidë e re! Jepni like!",                      "voice": "anila", "rate": "+10%" },
-  "challenge_chat":   { "text": "Sfidë e re! Shkruani mjaft në chat!",          "voice": "anila", "rate": "+10%" },
-  "challenge_poll":   { "text": "Votoni! Shkruani një, dy ose tre në chat!",    "voice": "anila", "rate": "+10%" },
-  "challenge_win":    { "text": "Bravo! Sfida u krye!",                         "voice": "anila", "rate": "+10%" },
-  "challenge_fail":   { "text": "Nuk u arrit. Provojmë përsëri!",               "voice": "anila", "rate": "+5%" },
-  "poll_attack":      { "text": "Sulm i përbashkët!",                           "voice": "anila", "rate": "+15%" },
-  "combo10":          { "text": "Kombo dhjetë!",                                "voice": "anila", "rate": "+15%" },
-  "combo20":          { "text": "Kombo njëzet!",                                "voice": "anila", "rate": "+15%" },
-  "combo50":          { "text": "Kombo pesëdhjetë!",                            "voice": "anila", "rate": "+15%" }
+ "chant_mjaft": {
+  "text": "Mjaft! Mjaft! Mjaft!",
+  "voice": "anila",
+  "rate": "+15%"
+ },
+ "chant_drejtesi": {
+  "text": "Drejtësi! Drejtësi! Drejtësi!",
+  "voice": "anila",
+  "rate": "+10%"
+ },
+ "chant_arsim": {
+  "text": "Arsim për të gjithë!",
+  "voice": "anila",
+  "rate": "+10%"
+ },
+ "chant_bashke": {
+  "text": "Bashkë! Bashkë! Bashkë!",
+  "voice": "anila",
+  "rate": "+15%"
+ },
+ "police_come": {
+  "text": "Policia po vjen! Kujdes!",
+  "voice": "anila",
+  "rate": "+15%"
+ },
+ "police_order": {
+  "text": "Vëmendje! Largohuni nga sheshi menjëherë!",
+  "voice": "ilir",
+  "rate": "+0%"
+ },
+ "police_10": {
+  "text": "Policia vjen për dhjetë sekonda!",
+  "voice": "ilir",
+  "rate": "+5%"
+ },
+ "police_leave": {
+  "text": "Policia u largua! Protesta vazhdon!",
+  "voice": "anila",
+  "rate": "+10%"
+ },
+ "arrest": {
+  "text": "Të kapëm! Eja me ne!",
+  "voice": "ilir",
+  "rate": "+5%"
+ },
+ "gas": {
+  "text": "Gaz! Kujdes, gaz!",
+  "voice": "anila",
+  "rate": "+15%"
+ },
+ "cop_down": {
+  "text": "Ahh! Më goditën!",
+  "voice": "ilir",
+  "rate": "+10%"
+ },
+ "cop_retreat": {
+  "text": "Tërhiquni! Tërhiquni!",
+  "voice": "ilir",
+  "rate": "+10%"
+ },
+ "freed": {
+  "text": "Jam i lirë! Faleminderit!",
+  "voice": "anila",
+  "rate": "+10%"
+ },
+ "back": {
+  "text": "U ktheva! Mjaft!",
+  "voice": "anila",
+  "rate": "+10%"
+ },
+ "victory": {
+  "text": "Fitore! Fitore e përbashkët!",
+  "voice": "anila",
+  "rate": "+10%"
+ },
+ "finale": {
+  "text": "Finalja! Të gjithë bashkë!",
+  "voice": "anila",
+  "rate": "+15%"
+ },
+ "hero": {
+  "text": "Faleminderit për dhuratën e madhe!",
+  "voice": "anila",
+  "rate": "+5%"
+ },
+ "welcome": {
+  "text": "Mirë se erdhe në protestë!",
+  "voice": "anila",
+  "rate": "+5%"
+ },
+ "levelup": {
+  "text": "Nivel i ri!",
+  "voice": "anila",
+  "rate": "+10%"
+ },
+ "challenge_like": {
+  "text": "Sfidë e re! Jepni like!",
+  "voice": "anila",
+  "rate": "+10%"
+ },
+ "challenge_chat": {
+  "text": "Sfidë e re! Shkruani mjaft në chat!",
+  "voice": "anila",
+  "rate": "+10%"
+ },
+ "challenge_poll": {
+  "text": "Votoni! Shkruani një, dy ose tre në chat!",
+  "voice": "anila",
+  "rate": "+10%"
+ },
+ "challenge_win": {
+  "text": "Bravo! Sfida u krye!",
+  "voice": "anila",
+  "rate": "+10%"
+ },
+ "challenge_fail": {
+  "text": "Nuk u arrit. Provojmë përsëri!",
+  "voice": "anila",
+  "rate": "+5%"
+ },
+ "poll_attack": {
+  "text": "Sulm i përbashkët!",
+  "voice": "anila",
+  "rate": "+15%"
+ },
+ "combo10": {
+  "text": "Kombo dhjetë!",
+  "voice": "anila",
+  "rate": "+15%"
+ },
+ "combo20": {
+  "text": "Kombo njëzet!",
+  "voice": "anila",
+  "rate": "+15%"
+ },
+ "combo50": {
+  "text": "Kombo pesëdhjetë!",
+  "voice": "anila",
+  "rate": "+15%"
+ },
+ "k_welcome": {
+  "text": "Mirë se erdhe në klub!",
+  "voice": "anila",
+  "rate": "+5%"
+ },
+ "k_pair": {
+  "text": "Kërce me ne!",
+  "voice": "anila",
+  "rate": "+10%"
+ },
+ "k_money": {
+  "text": "Para! Para! Faleminderit!",
+  "voice": "anila",
+  "rate": "+10%"
+ },
+ "k_vip": {
+  "text": "Mirë se erdhe në VIP!",
+  "voice": "anila",
+  "rate": "+5%"
+ },
+ "k_bottle": {
+  "text": "Shishe për të gjithë klubin!",
+  "voice": "ilir",
+  "rate": "+10%"
+ },
+ "k_king": {
+  "text": "Mbreti i natës! Duartrokitje!",
+  "voice": "ilir",
+  "rate": "+5%"
+ },
+ "k_song": {
+  "text": "Tani, kënga e re!",
+  "voice": "ilir",
+  "rate": "+5%"
+ },
+ "k_cheers": {
+  "text": "Gëzuar! Gëzuar!",
+  "voice": "anila",
+  "rate": "+15%"
+ },
+ "k_clap": {
+  "text": "Më lart duart!",
+  "voice": "ilir",
+  "rate": "+10%"
+ },
+ "k_hero": {
+  "text": "Faleminderit për dhuratën!",
+  "voice": "anila",
+  "rate": "+5%"
+ }
 }

@@ -64,6 +64,17 @@ gur (💎10+) → policia mpaket 2 s; shkëmb/molotov (💎30+) → policia rrë
 - Shuaje/ndize me tastin `M`. `?voice=0` fik vetëm të folurit, `?ambient=0` fik murmuritjen, `?vol=0.6` ul volumin.
 - **Që zëri të dalë në live**: kapja e dritares nuk merr zë. Në LIVE Studio/OBS shto kapje të zërit të kompjuterit (Desktop/System audio) ose të aplikacionit Edge.
 
+## 🎤 Loja e dytë: KLUBI LIVE (`klubi.html`)
+Klub nate i animuar, me të njëjtën urë TikTok (`2-TIKTOK.bat`). Nise me **`1-KLUBI.bat`** (`1-KLUBI.bat demo` për provë).
+- Kush hyn në live **hyn në klub** dhe kërcen me një kërcimtare. Kërcimtaret e shtyllës kërcejnë në skenë, një këngëtar kërkon me mikrofon
+  (tekst karaoke në ekran) dhe muzika sintetizohet vetë (3 stile: house, hip-hop, valle ballkanike — `!kenge` ose `K` ndërron këngën).
+- **Dhuratat**: 💎1+ 💵 hedh lekë te kërcimtarja · 💎5+ 💸 shi parash mbi pistë · 💎30+ 🛋️ **VIP**: shkon në krah dhe ulet me kërcimtaren
+  (sa më e madhe dhurata, aq më gjatë) · 💎100+ 🍾 **shishe për klubin** (kamerierë me shkëndija, të gjithë ngrenë gotat, 1 shishe për çdo 100💎, deri 6)
+  · 💎1000+ ose dhuratë me emër *Lion/Luan* 👑 **MBRETI I KLUBIT**: fron, kurorë, stuhi parash. `CFG`/`TIERS` te klubi.html ndryshojnë pragjet.
+- Numëruesi **bakshish** në LEK (1💎 = 100 L), renditja e dhuruesve, karta e mikpritësit, zëri shqip (si te loja tjetër) dhe tinguj (monedha, tapa, spërkatje, duartrokitje).
+- Personazhet janë të stilizuar dhe të veshur; për shikuesit përdoren figura të vizatuara me emër, jo foto reale (`?photos=1` ndez fotot e profilit nëse e do).
+- Kujdes: tema klubi/kërcimtare mund t'i nënshtrohet rregullave të TikTok-ut për përmbajtje sugjeruese; mbaje stilin e pastër siç është.
+
 ## Provë e shpejtë (pa TikTok)
 Hape `index.html` në shfletues me `?demo=1` (simulim automatik), ose pa parametra dhe shtyp:
 `J` hyrje · `P` policia · `1`–`5` dhurata (nivelet) · `L` like · `M` zë on/off.

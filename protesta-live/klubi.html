@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="sq">
+<head>
+<meta charset="utf-8">
+<title>Klubi Live – Loja</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  html,body{margin:0;height:100%;background:#000;overflow:hidden}
+  canvas{position:absolute;display:block}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+(() => {
+'use strict';
+
+/* =====================================================================
+   KLUBI LIVE – lojë animacioni për TikTok LIVE (stilizuar, pa përmbajtje eksplicite)
+   Parametra URL:  ?demo=1  simulim   ?ws=ws://host:port   ?mute=1   ?music=0   ?voice=0   ?photos=1 (foto profili)
+                   ?debug=1  Tastet: J hyrje · 1-5 dhurata · L like · K kënga tjetër · M zë on/off
+   ===================================================================== */
+
+const W = 1080, H = 1920;
+const Q = new URLSearchParams(location.search);
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+
+/* ------------------------------ konfigurim ------------------------------ */
+const CFG = {
+  wsUrl: Q.get('ws') || 'ws://localhost:8124',
+  lek: 100,                 // sa lekë vlen 1 💎 (për numëruesin e bakshishit)
+  maxFloor: 12,             // sa shikues njëkohësisht në pistë
+  vipSec: 25,               // sekonda bazë në VIP
+  photos: Q.has('photos'),  // foto profili në vend të figurave të vizatuara
+  floorTop: 1100, floorBottom: 1575,
+};
+// Nivelet e dhuratave (diamante për një dhuratë). Emri me "lion/luan" = MBRETI.
+const TIERS = [
+  { min: 1,    key: 'cash',   label: 'Para',          icon: '💵' },
+  { min: 5,    key: 'rain',   label: 'Shi parash',    icon: '💸' },
+  { min: 30,   key: 'vip',    label: 'VIP me kërcimtaren', icon: '🛋️' },
+  { min: 100,  key: 'bottle', label: 'Shishe për klubin',  icon: '🍾' },
+  { min: 1000, key: 'king',   label: 'MBRETI I KLUBIT',    icon: '👑' },
+];
+const KING_RE = /lion|luan|universe|galaxy/i;
+const tierOf = (d, name) => { if (KING_RE.test(name || '')) return TIERS[4]; let t = TIERS[0]; for (const x of TIERS) if (d >= x.min) t = x; return t; };
+
+const OUTFITS = ['#ff2e93', '#00e5ff', '#ffd60a', '#9b5de5', '#00f5a0', '#ff6b35', '#f72585', '#4cc9f0', '#e63946', '#7cff3a'];
+const SHIRTS = ['#1d3557', '#e63946', '#2a9d8f', '#e9c46a', '#9b5de5', '#f77f00', '#118ab2', '#ef476f', '#222a44', '#6a994e'];
+const SKINS = ['#f2c9a0', '#e0a97c', '#c68642', '#8d5524', '#ffdbac', '#f5d0b5'];
+const HAIRS = ['#1b1b1b', '#5a2d0c', '#c8963e', '#f5d76e', '#d1306a', '#6a2c91', '#2b2b3c', '#7a1f1f'];
+const BILL_COL = ['#3fa66b', '#4aa3d8', '#c8963e', '#b45fa8'];
+
+const SONGS = [
+  { title: 'Nata është jona', style: 0, bpm: 124, hue: 320, lines: ['Nata është jona, ndiz dritat!', 'Duart lart, zemra rreh!', 'Kërce, kërce, mos u ndal!', 'Këtu jemi bashkë, bashkë!'] },
+  { title: 'Dritat e qytetit', style: 1, bpm: 92, hue: 190, lines: ['Dritat e qytetit po digjen', 'Ritmi na çon pa pushim', 'Çdo hap është histori', 'Sonte askush nuk fle'] },
+  { title: 'Valle neoni', style: 2, bpm: 104, hue: 40, lines: ['Shtrëngoje dorën, vallëzo', 'Zemra jonë është ritmi', 'Hej, hej, ejani të gjithë', 'Klubi ynë është shtëpia'] },
+];
+
+/* ------------------------------ ndihmëse ------------------------------ */
+const rnd = (a, b) => a + Math.random() * (b - a);
+const rint = (a, b) => Math.floor(rnd(a, b + 1));
+const pick = a => a[Math.floor(Math.random() * a.length)];
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+function rr(c, x, y, w, h, r) {
+  c.beginPath(); c.moveTo(x + r, y);
+  c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r);
+  c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath();
+}
+const poly = (c, pts) => { c.beginPath(); pts.forEach((p, i) => i ? c.lineTo(p[0], p[1]) : c.moveTo(p[0], p[1])); c.closePath(); };
+function fitText(c, text, maxW, size, weight = '800') {
+  let s = size;
+  do { c.font = `${weight} ${s}px "Segoe UI", Arial, sans-serif`; s -= 2; }
+  while (c.measureText(text).width > maxW && s > 12);
+}
+function outlined(c, text, x, y, fill, stroke = 'rgba(0,0,0,.85)', lw = 5) {
+  c.lineJoin = 'round'; c.lineWidth = lw; c.strokeStyle = stroke; c.strokeText(text, x, y);
+  c.fillStyle = fill; c.fillText(text, x, y);
+}
+function shade(hex, k) {
+  const n = parseInt(hex.slice(1), 16), f = c => clamp(Math.round(c + (k > 0 ? (255 - c) : c) * k), 0, 255);
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+const OUT = '#1b1530';
+const money = n => Math.round(n).toLocaleString('en-US').replace(/,/g, '.');
+function fit() {
+  const s = Math.min(innerWidth / W, innerHeight / H);
+  cv.style.width = W * s + 'px'; cv.style.height = H * s + 'px';
+  cv.style.left = (innerWidth - W * s) / 2 + 'px'; cv.style.top = (innerHeight - H * s) / 2 + 'px';
+}
+addEventListener('resize', fit); fit();
+
+/* ------------------------------ gjendja ------------------------------ */
+const S = {
+  t: 0, viewers: [], girls: [], bills: [], parts: [], floats: [], waiters: [], timers: [],
+  byName: new Map(), queue: [], banner: null, hero: null, scores: {}, tips: 0, topName: '',
+  song: 0, songStart: 0, nextSong: 70, songBanner: 0, king: null, storm: 0, flash: 0, flashCol: '#fff',
+  status: 'offline', tt: 'waiting', likeBudget: 0, joined: 0, shake: 0, dbg: { avOk: 0, avFail: 0 },
+};
+const later = (sec, fn) => S.timers.push({ at: S.t + sec, fn });
+const song = () => SONGS[S.song];
+const beatNow = () => (S.t - S.songStart) * song().bpm / 60;
+
+/* ------------------------------ zëri: efekte + muzikë + shqip ------------------------------ */
+const snd = (() => {
+  let ac = null, master = null, muted = Q.has('mute'), last = {};
+  const vol = Q.has('vol') ? +Q.get('vol') : 1;
+  const A = () => {
+    if (muted) return null;
+    try {
+      if (!ac) { ac = new (window.AudioContext || window.webkitAudioContext)(); master = ac.createGain(); master.gain.value = vol; master.connect(ac.destination); startMusic(); }
+      if (ac.state === 'suspended') ac.resume();
+      return ac;
+    } catch (e) { return null; }
+  };
+  const tone = (f0, f1, dur, v, type = 'sine', delay = 0, dest) => {
+    const a = A(); if (!a) return;
+    const o = a.createOscillator(), g = a.createGain(), t = a.currentTime + delay;
+    o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(f1, 20), t + dur);
+    g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(dest || master); o.start(t); o.stop(t + dur + 0.05);
+  };
+  const nz = (dur, v, o = {}) => {
+    const a = A(); if (!a) return;
+    const n = Math.floor(a.sampleRate * dur), buf = a.createBuffer(1, n, a.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (o.attack ? Math.min(1, i / (a.sampleRate * o.attack)) * (1 - i / n) : (1 - i / n));
+    const s = a.createBufferSource(), fl = a.createBiquadFilter(), g = a.createGain(), t = (o.at ?? a.currentTime) + (o.delay || 0);
+    s.buffer = buf; fl.type = o.type || 'lowpass'; fl.frequency.setValueAtTime(o.f || 1000, t); if (o.f2) fl.frequency.linearRampToValueAtTime(o.f2, t + dur);
+    if (o.q) fl.Q.value = o.q; g.gain.value = v; s.connect(fl); fl.connect(g); g.connect(o.dest || master); s.start(t);
+  };
+  const gate = (k, ms, fn) => () => { const n = performance.now(); if (n - (last[k] || 0) < ms) return; last[k] = n; fn(); };
+
+  /* ---- muzika: sekuencues me 16 hapa ---- */
+  const N = { A1: 55, C2: 65.4, D2: 73.4, E2: 82.4, F2: 87.3, G2: 98, A2: 110, Bb2: 116.5, C3: 130.8, Cs3: 138.6 };
+  const SC = [440, 466.2, 554.4, 587.3, 659.3, 698.5, 784, 880]; // A frigjisht-dominant (ngjyrë ballkanike)
+  let musicOn = Q.get('music') !== '0', step = 0, nextT = 0, timer = null, lastSong = -1;
+  const kick = (t, v = .55) => { const a = ac, o = a.createOscillator(), g = a.createGain(); o.frequency.setValueAtTime(165, t); o.frequency.exponentialRampToValueAtTime(42, t + .13); g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(.001, t + .32); o.connect(g); g.connect(master); o.start(t); o.stop(t + .35); };
+  const clap = (t, v = .2) => { nz(.14, v, { type: 'bandpass', f: 1500, q: .8, at: t }); nz(.1, v * .7, { type: 'bandpass', f: 1800, q: .8, at: t + .012 }); };
+  const hat = (t, open) => nz(open ? .2 : .045, open ? .07 : .06, { type: 'highpass', f: 7000, at: t });
+  const bass = (t, f, dur, v = .2) => { const a = ac, o = a.createOscillator(), g = a.createGain(), fl = a.createBiquadFilter(); o.type = 'sawtooth'; o.frequency.value = f; fl.type = 'lowpass'; fl.frequency.setValueAtTime(700, t); fl.frequency.exponentialRampToValueAtTime(140, t + dur); g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(.001, t + dur); o.connect(fl); fl.connect(g); g.connect(master); o.start(t); o.stop(t + dur + .02); };
+  const lead = (t, f, dur, v = .045) => { const a = ac, o = a.createOscillator(), g = a.createGain(), fl = a.createBiquadFilter(); o.type = 'square'; o.frequency.value = f; fl.type = 'lowpass'; fl.frequency.value = 2400; g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(.001, t + dur); o.connect(fl); fl.connect(g); g.connect(master); o.start(t); o.stop(t + dur + .02); };
+  const dum = (t) => tone(210, 110, .22, .22, 'sine', t - ac.currentTime), tek = (t, v = .1) => nz(.07, v, { type: 'bandpass', f: 3200, q: 1.2, at: t });
+  function play(st, t) {
+    const bar = Math.floor(st / 16) % 4, k = st % 16, sg = S.song;
+    if (sg === 0) { // House
+      if (k % 4 === 0) kick(t); if (k === 4 || k === 12) clap(t); if (k % 4 === 2) hat(t, true); else if (k % 2 === 1) hat(t, false);
+      const root = [N.A1, N.A1, N.F2 / 2, N.G2 / 2][bar]; if ([0, 3, 6, 10, 12, 15].includes(k)) bass(t, root * (k === 10 ? 2 : 1), .22);
+      if (k % 4 === 2) lead(t, [N.A2 * 4, N.C3 * 4, N.E2 * 8, N.C3 * 4][bar % 4], .18, .035);
+    } else if (sg === 1) { // Hip-hop
+      if (k === 0 || k === 7 || k === 10) kick(t, .6); if (k === 4 || k === 12) clap(t, .26); if (k % 2 === 0) hat(t, k === 14);
+      if (k === 0 || k === 7 || k === 10) bass(t, [N.A1, N.A1, N.F2 / 2, N.E2 / 2][bar], .5, .26);
+      if (k === 2 && bar % 2) lead(t, 880, .3, .03);
+    } else { // Ballkanik
+      if (k === 0 || k === 6 || k === 10) dum(t); if (k === 4 || k === 12) tek(t, .16); if (k % 2 === 0 && k !== 4 && k !== 12) tek(t, .06);
+      if (k % 4 === 0) kick(t, .28);
+      const arp = [0, 1, 2, 1, 3, 2, 1, 0, 2, 3, 4, 3, 2, 1, 0, 1]; if (k % 2 === 0) lead(t, SC[arp[(k + bar * 4) % 16] % SC.length], .22, .04);
+      if (k === 0 || k === 8) bass(t, [N.A1, N.A1, N.Bb2 / 2, N.A1][bar], .4, .2);
+    }
+  }
+  function tick() {
+    if (!ac || muted || !musicOn) return;
+    if (lastSong !== S.song) { lastSong = S.song; step = 0; nextT = ac.currentTime + .08; }
+    const dur = 60 / song().bpm / 4;
+    while (nextT < ac.currentTime + .18) { play(step, nextT); nextT += dur; step = (step + 1) % 64; }
+  }
+  function startMusic() { if (!timer) timer = setInterval(tick, 40); }
+  return {
+    toggle() { muted = !muted; if (master) master.gain.value = muted ? 0 : vol; if (!muted) A(); },
+    isMuted: () => muted,
+    blocked: () => !muted && ac && ac.state === 'suspended',
+    resume: () => A(),
+    join: gate('jn', 150, () => { tone(520, 780, .16, .07, 'triangle'); tone(780, 1040, .18, .05, 'triangle', .09); }),
+    coin: gate('cn', 60, () => { tone(1800, 2400, .09, .06, 'triangle'); tone(2400, 3000, .12, .04, 'triangle', .06); }),
+    coins: gate('cs', 200, () => { for (let i = 0; i < 6; i++) tone(1600 + Math.random() * 1400, 2600, .1, .05, 'triangle', i * .07); }),
+    whoosh: gate('wh', 70, () => nz(.28, .05, { f: 2200 })),
+    cork: gate('ck', 120, () => { nz(.1, .2, { type: 'highpass', f: 2000 }); tone(300, 120, .12, .14, 'sine'); }),
+    fizz: gate('fz', 200, () => nz(1.1, .1, { type: 'highpass', f: 3500, f2: 6500 })),
+    sparkle: gate('sp', 120, () => { for (let i = 0; i < 5; i++) tone(2400 + Math.random() * 1800, 3800, .08, .03, 'sine', i * .05); }),
+    cheer: gate('ch', 800, () => { nz(1.8, .13, { type: 'bandpass', f: 900, f2: 700, q: .7, attack: .35 }); nz(1.5, .07, { type: 'highpass', f: 2500, attack: .4, delay: .1 }); for (let i = 0; i < 12; i++) nz(.04, .09, { type: 'highpass', f: 2200, delay: .2 + Math.random() * 1.4 }); }),
+    bell: gate('bl', 400, () => { tone(1318, 1318, .5, .06); tone(1976, 1976, .4, .03); }),
+    fanfare: gate('fa', 1000, () => { [523, 659, 784, 1046, 1318].forEach((f, i) => tone(f, f * 1.01, .22, .07, 'triangle', i * .12)); [523, 659, 784, 1046].forEach(f => tone(f, f, .9, .04, 'triangle', .65)); }),
+    swish: gate('sw', 150, () => nz(.4, .06, { type: 'bandpass', f: 600, f2: 2400, q: .9 })),
+  };
+})();
+addEventListener('pointerdown', () => snd.resume());
+addEventListener('keydown', () => snd.resume());
+
+const voice = (() => {
+  const off = Q.get('voice') === '0' || Q.has('mute');
+  const synth = window.speechSynthesis, vol = Q.has('vol') ? Math.min(1, +Q.get('vol')) : 1;
+  let lines = {}, clips = {}, sq = [], cur = null, last = {};
+  const loadVoices = () => { try { sq = synth.getVoices().filter(v => /^sq/i.test(v.lang)); } catch (e) {} };
+  if (synth) { loadVoices(); synth.onvoiceschanged = loadVoices; }
+  fetch('voice_lines.json').then(r => r.json()).then(j => {
+    lines = j;
+    for (const k of Object.keys(j)) if (k.startsWith('k_')) { const a = new Audio(); a.preload = 'auto'; a.oncanplaythrough = () => { clips[k] = a.src; }; a.onerror = () => {}; a.src = `assets/voice/${k}.mp3`; }
+  }).catch(() => {});
+  const busy = () => (cur && !cur.ended && !cur.paused) || (synth && synth.speaking);
+  function say(key, o = {}) {
+    if (off || snd.isMuted()) return;
+    const l = lines[key]; if (!l) return;
+    const now = performance.now(); if (now - (last[key] || 0) < (o.gap ?? 5000)) return;
+    if (busy()) { if (!o.prio) return; try { if (cur) cur.pause(); if (synth) synth.cancel(); } catch (e) {} }
+    last[key] = now;
+    if (!(o.text && sq.length) && clips[key]) { cur = new Audio(clips[key]); cur.volume = vol; cur.play().catch(() => {}); return; }
+    if (!sq.length) return;
+    const u = new SpeechSynthesisUtterance(o.text || l.text), want = l.voice === 'ilir' ? /Ilir/i : /Anila/i;
+    u.voice = sq.find(v => want.test(v.name)) || sq[0]; u.lang = 'sq-AL'; u.rate = 1 + (parseInt(l.rate) || 0) / 100; u.pitch = l.voice === 'ilir' ? .9 : 1.05; u.volume = vol;
+    try { synth.speak(u); } catch (e) {}
+  }
+  return { say, status: () => `${Object.keys(clips).length} klipe · ${sq.length ? sq[0].name : 'pa zë shfletuesi'}` };
+})();
+
+/* ------------------------------ sfondi (statik) ------------------------------ */
+const bg = document.createElement('canvas'); bg.width = W; bg.height = H;
+const vig = document.createElement('canvas'); vig.width = W; vig.height = H;
+(function buildBG() {
+  const g = bg.getContext('2d');
+  let gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, '#09041c'); gr.addColorStop(.5, '#170a36'); gr.addColorStop(1, '#0a0516');
+  g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  // mur me panele
+  g.strokeStyle = 'rgba(255,255,255,.035)'; g.lineWidth = 2;
+  for (let x = 0; x < W; x += 90) { g.beginPath(); g.moveTo(x, 300); g.lineTo(x, 1100); g.stroke(); }
+  for (let y = 300; y < 1100; y += 90) { g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
+  // bari në fund të mureve (rafte me shishe)
+  g.fillStyle = '#120a28'; g.fillRect(0, 1040, W, 60);
+  for (let x = 40; x < W; x += 46) { g.fillStyle = `hsla(${(x * 7) % 360},70%,55%,.55)`; rr(g, x, 1000, 14, 40, 4); g.fill(); g.fillRect(x + 4, 988, 6, 14); }
+  // trusa e tavanit
+  g.fillStyle = '#1b1238'; g.fillRect(0, 300, W, 12);
+  // zonat e VIP (tapet)
+  for (const x of [30, 770]) { g.fillStyle = 'rgba(120,40,160,.22)'; rr(g, x, 840, 280, 230, 20); g.fill(); g.strokeStyle = 'rgba(255,214,10,.4)'; g.lineWidth = 3; g.stroke(); }
+  // vinjeta
+  const v = vig.getContext('2d'), vg = v.createRadialGradient(W / 2, H / 2, 520, W / 2, H / 2, 1260);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.62)'); v.fillStyle = vg; v.fillRect(0, 0, W, H);
+})();
+
+/* ------------------------------ figurat ------------------------------ */
+const scaleAt = y => .74 + clamp((y - CFG.floorTop) / (CFG.floorBottom - CFG.floorTop), 0, 1) * .42;
+function limb(c, x0, y0, x1, y1, w, col) {
+  c.lineCap = 'round'; c.strokeStyle = OUT; c.lineWidth = w + 5; c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke();
+  c.strokeStyle = col; c.lineWidth = w; c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke();
+}
+// pozë kërcimi sinkron me ritmin
+function poseOf(o, t) {
+  if (o.seated) { const b = beatNow() + o.seed; return { bob: 0, sway: Math.sin(Math.PI * b / 2) * 3, aL: .5, aR: .5 + Math.max(0, Math.sin(b * .8)) * 1.6 }; }
+  const b = beatNow() + (o.seed || 0), mv = (Math.floor(b / 8) + (o.shift || 0)) % 4, pulse = Math.abs(Math.sin(Math.PI * b));
+  const p = { bob: pulse * 8, sway: Math.sin(Math.PI * b / 2) * 10, aL: .3, aR: .3, spin: 0 };
+  if (mv === 0) { p.aL = 2.5 + Math.sin(Math.PI * b) * .3; p.aR = 2.5 - Math.sin(Math.PI * b) * .3; }      // duart lart
+  else if (mv === 1) { p.aL = Math.sin(Math.PI * b / 2) > 0 ? 2.7 : .4; p.aR = Math.sin(Math.PI * b / 2) > 0 ? .4 : 2.7; } // ndërrim
+  else if (mv === 2) { p.aL = 1.5 + Math.sin(Math.PI * b) * .35; p.aR = 1.5 + Math.cos(Math.PI * b) * .35; p.spin = Math.cos(Math.PI * b / 2); } // krahë anash + rrotullim
+  else { p.aL = .7; p.aR = .7; p.sway *= 1.5; }                                                              // hip
+  if (o.cheers > 0) p.aR = 2.6;
+  if (o.kind === 'singer') { p.spin = 0; p.aL = 2.2 + Math.sin(Math.PI * b) * .4; p.aR = 2.35; p.sway *= .6; }
+  if (o.walking) { p.bob = Math.abs(Math.sin(t * 11 + (o.seed || 0))) * 5; p.sway = 0; p.aL = .35 + Math.sin(t * 11) * .3; p.aR = .35 - Math.sin(t * 11) * .3; }
+  return p;
+}
+function glass(c, x, y) {
+  c.save(); c.translate(x, y); c.fillStyle = 'rgba(255,255,255,.55)'; poly(c, [[-5, -16], [5, -16], [3, -3], [-3, -3]]); c.fill();
+  c.fillStyle = '#ffe9a8'; poly(c, [[-4, -12], [4, -12], [2.5, -4], [-2.5, -4]]); c.fill(); c.fillStyle = '#fff'; c.fillRect(-1, -3, 2, 8); c.fillRect(-4, 5, 8, 2); c.restore();
+}
+function figure(o, t) {
+  const s = o.scale, pz = poseOf(o, t), girl = o.female;
+  ctx.save(); ctx.translate(o.x, o.y); ctx.scale(s * (o.flip || 1), s);
+  ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.beginPath(); ctx.ellipse(0, 3, 26, 8, 0, 0, 7); ctx.fill();
+  if (o.lean) ctx.rotate(o.lean);
+  ctx.translate(pz.sway * .4, -pz.bob); ctx.lineJoin = 'round';
+  const sp = pz.spin ? Math.cos(t * 3 + (o.seed || 0)) : 1; if (pz.spin) ctx.scale(Math.max(.35, Math.abs(sp)), 1);
+  const HY = -100, HR = 25;
+  // flokët e pasme (vajzat)
+  if (girl && o.hairStyle !== 3) { ctx.fillStyle = o.hair; ctx.strokeStyle = OUT; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(0, HY + 22, HR + 7, 42, 0, 0, 7); ctx.fill(); ctx.stroke(); }
+  // këmbët
+  if (!o.seated) {
+    const lw = o.kickL ? 0 : 0;
+    const wx = o.walking ? Math.sin(t * 11 + (o.seed || 0)) * 10 : pz.sway * .3;
+    limb(ctx, -8, -28, -8 + wx, -5, girl ? 10 : 12, girl ? o.skin : '#2d3354'); limb(ctx, 8, -28, 8 - wx, -5, girl ? 10 : 12, girl ? o.skin : '#2d3354');
+    ctx.fillStyle = girl ? o.dress : '#fff'; ctx.strokeStyle = OUT; ctx.lineWidth = 3;
+    for (const fx of [-8 + wx, 8 - wx]) { ctx.beginPath(); ctx.ellipse(fx + 2, -2, 11, 6, 0, 0, 7); ctx.fill(); ctx.stroke(); }
+  }
+  // krahu i majtë (prapa trupit)
+  const shL = [-17, -66], shR = [17, -66], L = 27;
+  const hand = (sh, a, dir) => [sh[0] + dir * Math.sin(a) * L, sh[1] + Math.cos(a) * L];
+  const hL = hand(shL, pz.aL, -1), hR = hand(shR, pz.aR, 1);
+  const armCol = girl ? o.skin : o.top;
+  limb(ctx, shL[0], shL[1], hL[0], hL[1], 10, armCol); ctx.fillStyle = o.skin; ctx.strokeStyle = OUT; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(hL[0], hL[1], 6, 0, 7); ctx.fill(); ctx.stroke();
+  // trupi
+  if (girl) {
+    const hem = o.hem || 30, sw = pz.sway * .8;
+    const gg = ctx.createLinearGradient(0, -74, 0, -14); gg.addColorStop(0, shade(o.dress, .25)); gg.addColorStop(1, shade(o.dress, -.2));
+    ctx.fillStyle = gg; poly(ctx, [[-16, -76], [16, -76], [13, -50], [hem + sw, o.seated ? -20 : -16], [-hem + sw, o.seated ? -20 : -16], [-13, -50]]); ctx.fill(); ctx.strokeStyle = OUT; ctx.lineWidth = 3.5; ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,.8)'; for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.arc(-14 + i * 6 + Math.sin(t * 6 + i) * 1, -40 + (i % 3) * 8, 1.6, 0, 7); ctx.fill(); }
+    ctx.fillStyle = o.skin; ctx.beginPath(); ctx.ellipse(0, -76, 10, 5, 0, 0, 7); ctx.fill(); // qafa/dekolteja e mbyllur
+  } else {
+    const gg = ctx.createLinearGradient(-20, -74, 20, -26); gg.addColorStop(0, shade(o.top, .25)); gg.addColorStop(1, shade(o.top, -.2));
+    ctx.fillStyle = gg; rr(ctx, -20, -74, 40, 50, 14); ctx.fill(); ctx.strokeStyle = OUT; ctx.lineWidth = 3.5; ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fillRect(-20, -44, 40, 4);
+  }
+  // kushinë e divanit kur ulet
+  if (o.seated) { ctx.fillStyle = o.sofa || '#7a1f6a'; rr(ctx, -30, -34, 60, 40, 14); ctx.fill(); ctx.strokeStyle = OUT; ctx.lineWidth = 3; ctx.stroke(); }
+  // krahu i djathtë
+  limb(ctx, shR[0], shR[1], hR[0], hR[1], 10, armCol); ctx.fillStyle = o.skin; ctx.strokeStyle = OUT; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(hR[0], hR[1], 6, 0, 7); ctx.fill(); ctx.stroke();
+  if (o.cheers > 0 || o.glassAlways) glass(ctx, hR[0], hR[1] - 4);
+  if (o.mic) { ctx.fillStyle = '#222'; rr(ctx, hR[0] - 5, hR[1] - 22, 10, 22, 5); ctx.fill(); ctx.fillStyle = '#c9c9d6'; ctx.beginPath(); ctx.arc(hR[0], hR[1] - 24, 8, 0, 7); ctx.fill(); ctx.strokeStyle = OUT; ctx.lineWidth = 2; ctx.stroke(); }
+  // koka
+  ctx.fillStyle = o.skin; rr(ctx, -6, -82, 12, 12, 4); ctx.fill();
+  if (CFG.photos && o.img && o.img.complete && o.img.naturalWidth) {
+    ctx.save(); ctx.beginPath(); ctx.arc(0, HY, HR, 0, 7); ctx.clip(); ctx.drawImage(o.img, -HR, HY - HR, HR * 2, HR * 2); ctx.restore();
+    ctx.lineWidth = 5; ctx.strokeStyle = '#fff'; ctx.beginPath(); ctx.arc(0, HY, HR, 0, 7); ctx.stroke(); ctx.lineWidth = 3; ctx.strokeStyle = o.top; ctx.beginPath(); ctx.arc(0, HY, HR + 3.5, 0, 7); ctx.stroke();
+  } else {
+    ctx.fillStyle = o.skin; ctx.beginPath(); ctx.arc(0, HY, HR - 2, 0, 7); ctx.fill(); ctx.strokeStyle = OUT; ctx.lineWidth = 3.5; ctx.stroke();
+    ctx.fillStyle = o.hair;
+    if (girl) { ctx.beginPath(); ctx.arc(0, HY - 3, HR - 1, Math.PI * .95, Math.PI * 2.05); ctx.closePath(); ctx.fill(); ctx.stroke(); if (o.hairStyle === 3) { ctx.beginPath(); ctx.arc(0, HY - HR - 5, 9, 0, 7); ctx.fill(); ctx.stroke(); } if (o.hairStyle === 2) { ctx.beginPath(); ctx.ellipse(HR - 2, HY + 12, 7, 20, .2, 0, 7); ctx.fill(); ctx.stroke(); } }
+    else { ctx.beginPath(); ctx.arc(0, HY - 4, HR - 1, Math.PI * 1.02, Math.PI * 1.98); ctx.closePath(); ctx.fill(); ctx.stroke(); if (o.hairStyle === 1) { ctx.fillRect(-HR, HY - 6, 7, 16); ctx.fillRect(HR - 7, HY - 6, 7, 16); } if (o.cap) { ctx.fillStyle = o.top; ctx.beginPath(); ctx.arc(0, HY - 4, HR, Math.PI, 0); ctx.closePath(); ctx.fill(); ctx.stroke(); rr(ctx, -HR - 6, HY - 6, HR * 2 + 12, 7, 3); ctx.fill(); ctx.stroke(); } }
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.ellipse(-8, HY + 2, 5, 6, 0, 0, 7); ctx.ellipse(8, HY + 2, 5, 6, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = '#1a1a24'; ctx.beginPath(); ctx.arc(-7, HY + 3, 3, 0, 7); ctx.arc(9, HY + 3, 3, 0, 7); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(-6, HY + 2, 1.1, 0, 7); ctx.arc(10, HY + 2, 1.1, 0, 7); ctx.fill();
+    if (girl) { ctx.strokeStyle = '#1a1a24'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-13, HY - 1); ctx.lineTo(-16, HY - 4); ctx.moveTo(13, HY - 1); ctx.lineTo(16, HY - 4); ctx.stroke(); }
+    ctx.fillStyle = 'rgba(255,90,130,.38)'; ctx.beginPath(); ctx.arc(-15, HY + 10, 4.5, 0, 7); ctx.arc(15, HY + 10, 4.5, 0, 7); ctx.fill();
+    const open = o.mouth ? Math.sin(t * 13 + (o.seed || 0)) > -.2 : Math.sin(t * 4 + (o.seed || 0)) > .5;
+    if (open) { ctx.fillStyle = girl ? '#a3123a' : '#5a1620'; ctx.beginPath(); ctx.ellipse(0, HY + 14, 6, 5, 0, 0, 7); ctx.fill(); }
+    else { ctx.strokeStyle = girl ? '#d1204f' : '#5a1620'; ctx.lineWidth = girl ? 3 : 2.5; ctx.beginPath(); ctx.arc(0, HY + 11, 5, .2, Math.PI - .2); ctx.stroke(); }
+  }
+  if (girl) { ctx.fillStyle = o.dress; for (const ex of [-HR + 1, HR - 1]) { ctx.beginPath(); ctx.arc(ex, HY + 12, 3.2, 0, 7); ctx.fill(); } } // vathë
+  if (o.crown) { ctx.fillStyle = '#ffd60a'; ctx.strokeStyle = OUT; ctx.lineWidth = 2.5; poly(ctx, [[-16, HY - 24], [-16, HY - 42], [-8, HY - 32], [0, HY - 46], [8, HY - 32], [16, HY - 42], [16, HY - 24]]); ctx.fill(); ctx.stroke(); }
+  if (o.bottleTray) { // tabaka me shishe dhe shkëndijë
+    ctx.save(); ctx.translate(0, HY - 54); ctx.fillStyle = '#c9c9d6'; rr(ctx, -30, 18, 60, 8, 4); ctx.fill(); ctx.strokeStyle = OUT; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = '#1b6e3a'; rr(ctx, -6, -8, 12, 28, 4); ctx.fill(); ctx.fillRect(-3, -18, 6, 12); ctx.fillStyle = '#d4af37'; ctx.fillRect(-4, -20, 8, 5);
+    for (let i = 0; i < 6; i++) { ctx.fillStyle = Math.random() < .5 ? '#ffe9a8' : '#fff'; ctx.beginPath(); ctx.arc(rnd(-9, 9), -26 - rnd(0, 16), rnd(1, 2.6), 0, 7); ctx.fill(); }
+    ctx.restore();
+  }
+  ctx.restore();
+}
+function tag(o) { // emri mbi kokë + balonë e bisedës
+  if (!o.name && !(o.sayT > 0)) return;
+  const s = o.scale, x = o.x, y = o.y - 156 * s;
+  ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  if (o.name) {
+    const nm = o.name.length > 13 ? o.name.slice(0, 12) + '…' : o.name; fitText(ctx, nm, 130, 21, '800');
+    const w = ctx.measureText(nm).width + 22; ctx.fillStyle = 'rgba(12,8,30,.85)'; rr(ctx, x - w / 2, y - 14, w, 28, 14); ctx.fill();
+    ctx.strokeStyle = o.top || '#ff2e93'; ctx.lineWidth = 2.5; ctx.stroke(); ctx.fillStyle = '#fff'; ctx.fillText(nm, x, y + 1);
+    if (o.name === S.topName && (S.scores[o.name] || 0) > 0) { const cy = y - 17; ctx.fillStyle = '#ffd60a'; ctx.strokeStyle = OUT; ctx.lineWidth = 2; poly(ctx, [[x - 13, cy], [x - 13, cy - 15], [x - 6, cy - 7], [x, cy - 18], [x + 6, cy - 7], [x + 13, cy - 15], [x + 13, cy]]); ctx.fill(); ctx.stroke(); }
+  }
+  if (o.sayT > 0) {
+    fitText(ctx, o.say, 220, 19, '700'); const bw = ctx.measureText(o.say).width + 22, by = y - (o.name ? 38 : 8);
+    ctx.globalAlpha = clamp(o.sayT * 2, 0, 1); ctx.fillStyle = '#fff'; rr(ctx, x - bw / 2, by - 16, bw, 30, 14); ctx.fill(); poly(ctx, [[x - 6, by + 13], [x + 6, by + 13], [x, by + 22]]); ctx.fill();
+    ctx.fillStyle = '#111'; ctx.fillText(o.say, x, by); ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+}
+
+/* ------------------------------ entitetet ------------------------------ */
+function look(female) {
+  return { female, skin: pick(SKINS), hair: pick(HAIRS), hairStyle: female ? pick([0, 1, 2, 3]) : pick([0, 0, 1]), dress: pick(OUTFITS), top: female ? pick(OUTFITS) : pick(SHIRTS), cap: !female && Math.random() < .25, seed: rnd(0, 8), shift: rint(0, 3), hem: female ? rnd(26, 34) : 0 };
+}
+function newGirl(kind, x, y) { return Object.assign(look(true), { kind, x, y, tx: x, ty: y, walking: false, scale: scaleAt(y), cheers: 0, flip: 1 }); }
+const stageGirls = [], vipSlots = [];
+// kërcimtaret në shtyllë (në skenë) + kërcimtaret e VIP-it
+const POLES = [{ x: 150, y: 820 }, { x: 930, y: 820 }];
+POLES.forEach((p, i) => { const g = newGirl('pole', p.x, p.y); g.scale = 1.12; g.pole = p; g.seed = i * 3; g.hem = 24; stageGirls.push(g); });
+const SLOT = [{ x: 170, y: 925 }, { x: 170, y: 1050 }, { x: 910, y: 925 }, { x: 910, y: 1050 }];
+SLOT.forEach((p, i) => {
+  const g = newGirl('vip', p.x + 95 * (i < 2 ? 1 : -1), p.y); g.scale = 1.0; g.homeX = g.x; g.homeY = g.y; g.sofa = '#7a1f6a';
+  vipSlots.push({ ...p, i, dancer: g, viewer: null, until: 0, dir: i < 2 ? 1 : -1, sofa: ['#7a1f6a', '#1f4a7a', '#7a1f3a', '#1f7a5a'][i] });
+});
+const singer = Object.assign(look(false), { kind: 'singer', name: '', x: 540, y: 806, scale: 1.45, hairStyle: 0, cap: false, top: '#d4af37', mic: true, mouth: true, cheers: 0, glassAlways: false });
+
+function spot() {
+  let best = null, bd = -1;
+  const pairs = S.viewers.filter(v => !v.leaving && v.state === 'floor');
+  for (let i = 0; i < 18; i++) {
+    const x = rnd(230, 850), y = rnd(CFG.floorTop + 40, CFG.floorBottom - 30); let d = 1e9;
+    for (const v of pairs) d = Math.min(d, Math.hypot(v.tx - x, (v.ty - y) * 1.5));
+    if (d > bd) { bd = d; best = { x, y }; }
+  }
+  return best;
+}
+function addViewer(name, ambient = false) {
+  if (!ambient && S.byName.has(name)) { const v = S.byName.get(name); v.jump = 1; return v; }
+  const live = S.viewers.filter(v => !v.leaving && v.state === 'floor');
+  if (live.length >= CFG.maxFloor) { const victim = live.find(v => v.ambient) || live[0]; sendOut(victim); }
+  const sp = spot(), side = Math.random() < .5 ? -1 : 1, ex = side < 0 ? -80 : W + 80, ey = CFG.floorBottom - 30;
+  const v = Object.assign(look(false), { kind: 'viewer', name: ambient ? '' : name, ambient, x: ex, y: ey, tx: sp.x, ty: sp.y, walking: true, state: 'floor', scale: scaleAt(ey), cheers: 0, say: '', sayT: 0, jump: 0, leaving: false, born: S.t });
+  const g = newGirl('hostess', ex + side * -70, ey); g.tx = sp.x + 66; g.ty = sp.y; g.walking = true; g.flip = -1; g.lean = -.06; g.partnerOf = v; v.partner = g; v.lean = .06;
+  g.say = ''; g.sayT = 0;
+  S.viewers.push(v); S.girls.push(g); if (!ambient) S.byName.set(name, v);
+  return v;
+}
+function sendOut(v) {
+  v.leaving = true; v.walking = true; v.tx = v.x < W / 2 ? -100 : W + 100; v.ty = v.y;
+  if (v.partner) { v.partner.leaving = true; v.partner.walking = true; v.partner.tx = v.tx; v.partner.ty = v.partner.y; }
+  if (S.byName.get(v.name) === v) S.byName.delete(v.name);
+}
+function setPhoto(v, url) {
+  if (!CFG.photos || !url || v.img || v.ambient) return;
+  const img = new Image(); img.onload = () => S.dbg.avOk++; img.onerror = () => { S.dbg.avFail++; if (v.img === img) v.img = null; };
+  img.src = /^(data:|https?:)/.test(url) ? url : (location.protocol.startsWith('http') ? '' : 'http://localhost:8123') + url; v.img = img;
+}
+const getViewer = (name, avatar) => { const v = S.byName.get(name) || addViewer(name); setPhoto(v, avatar); return v; };
+
+/* ------------------------------ para, shishe, VIP, mbret ------------------------------ */
+function bill(x, y, tx, ty, val, o = {}) {
+  S.bills.push({ x, y, x0: x, y0: y, tx, ty, t: 0, dur: o.dur || rnd(.8, 1.2), arc: o.arc ?? rnd(120, 260), val, rot: rnd(0, 6), vr: rnd(-6, 6), col: pick(BILL_COL), state: 'fly', life: 0, fall: !!o.fall, flutter: rnd(0, 6) });
+}
+function toss(v, n, val) {
+  const target = v.partner || pick(S.girls) || singer;
+  for (let i = 0; i < n; i++) later(i * .16, () => { const sc = v.scale; bill(v.x + 18 * sc, v.y - 90 * sc, target.x + rnd(-40, 40), target.y - 10 + rnd(-10, 40), val); snd.swish(); });
+}
+function rain(n, val, cx = 540) {
+  for (let i = 0; i < n; i++) later(i * .05, () => { const x = clamp(cx + rnd(-420, 420), 140, 940), y = rnd(CFG.floorTop + 20, CFG.floorBottom - 20); bill(x + rnd(-60, 60), 860, x, y, val, { fall: true, dur: rnd(1.1, 2) }); });
+  snd.coins();
+}
+function goVip(v, sec) {
+  let slot = vipSlots.find(s => !s.viewer) || vipSlots.slice().sort((a, b) => a.until - b.until)[0];
+  if (slot.viewer && slot.viewer !== v) vipLeave(slot);
+  if (v.state === 'vip' || v.state === 'tovip') { const cur = vipSlots.find(s => s.viewer === v); if (cur) { cur.until = Math.max(cur.until, S.t + sec); return cur; } }
+  slot.viewer = v; slot.until = S.t + 9999; slot.sec = sec; v.state = 'tovip'; v.slot = slot; v.tx = slot.x - 38 * slot.dir; v.ty = slot.y; v.walking = true;
+  slot.dancer.state = 'wait'; return slot;
+}
+function vipLeave(slot) {
+  const v = slot.viewer; slot.viewer = null; slot.until = 0; slot.dancer.state = 'idle'; slot.dancer.seated = false; slot.dancer.x = slot.dancer.homeX; slot.dancer.y = slot.dancer.homeY; slot.dancer.scale = 1;
+  if (v) { v.seated = false; v.slot = null; v.state = 'floor'; const sp = spot(); v.tx = sp.x; v.ty = sp.y; v.walking = true; v.scale = scaleAt(v.y); if (v.partner) { v.partner.tx = sp.x + 66; v.partner.ty = sp.y; v.partner.walking = true; } }
+}
+function bottles(v, n) {
+  const targets = [];
+  const slotsBusy = vipSlots.filter(s => s.viewer), pairs = S.viewers.filter(x => x.state === 'floor' && !x.leaving);
+  if (v && v.state === 'floor') targets.push(v);
+  while (targets.length < n) { const c = Math.random() < .5 && slotsBusy.length ? pick(slotsBusy).viewer : pick(pairs) || pick(slotsBusy)?.viewer; if (!c) break; targets.push(c); }
+  targets.slice(0, n).forEach((tg, i) => later(i * .7, () => {
+    const side = Math.random() < .5 ? -1 : 1;
+    S.waiters.push(Object.assign(look(i % 2 === 0), { kind: 'waiter', name: '', x: side < 0 ? -80 : W + 80, y: CFG.floorBottom + 10, tx: tg.x, ty: tg.y + 40, walking: true, state: 'in', scale: scaleAt(CFG.floorBottom), bottleTray: true, target: tg, top: '#222', dress: '#111', cheers: 0, hem: 24 }));
+  }));
+  snd.bell();
+}
+function pop(x, y) {
+  snd.cork(); snd.fizz(); S.flash = .18; S.flashCol = '#ffe9a8';
+  P({ x: x + 6, y: y - 120, vx: rnd(-60, 60), vy: -520, g: 900, life: 1.2, size: 7, col: '#d4af37', type: 'dot' });
+  for (let i = 0; i < 50; i++) P({ x, y: y - 100, vx: rnd(-170, 170), vy: rnd(-420, -120), g: 650, life: rnd(.8, 1.6), size: rnd(2, 5), col: pick(['#fff', '#ffe9a8', '#cfeaff']), type: 'dot' });
+  for (let i = 0; i < 24; i++) P({ x: x + rnd(-40, 40), y: y - 70, vx: rnd(-90, 90), vy: rnd(-300, -100), g: 420, life: rnd(1, 2), size: rnd(3, 6), col: '#d4af37', type: 'star' });
+  snd.sparkle();
+}
+function crown(v) {
+  if (S.king && S.king.v && S.king.v !== v) { S.king.v.crown = false; }
+  S.king = { v, until: S.t + 40, name: v.name }; v.crown = true;
+  S.storm = 22; v.jump = 1;
+}
+
+/* ------------------------------ grimca & tekste ------------------------------ */
+function P(o) { S.parts.push(Object.assign({ vx: 0, vy: 0, g: 0, life: 1, size: 4, col: '#fff', type: 'dot', rot: 0, vr: 0 }, o, { max: o.life })); }
+function floatText(x, y, text, col) { S.floats.push({ x, y, text, col, t: 0 }); }
+function confetti(x, y, n) { for (let i = 0; i < n; i++) P({ x, y, vx: rnd(-280, 280), vy: rnd(-460, -120), g: 520, life: rnd(1.4, 2.4), size: rnd(6, 11), col: pick(OUTFITS), type: 'confetti', rot: rnd(0, 6), vr: rnd(-9, 9) }); }
+function pushBanner(kind, l1, l2) { S.queue.push({ kind, l1, l2 }); if (S.queue.length > 12) S.queue.splice(1, 1); }
+
+/* ------------------------------ ngjarjet ------------------------------ */
+function onJoin(user, avatar) {
+  if (!user) return;
+  const isNew = !S.byName.has(user), v = addViewer(user); setPhoto(v, avatar); v.jump = 1;
+  if (isNew) S.joined++;
+  pushBanner('join', 'SAPO HYRI NË KLUB:', '@' + user);
+  snd.join(); voice.say('k_welcome', { gap: 9000 });
+  if (v.partner) later(1.8, () => { v.partner.say = 'Kërce me mua!'; v.partner.sayT = 2.2; });
+}
+function onGift(user, gname, d, count, avatar) {
+  count = Math.max(1, count | 0); d = Math.max(1, d | 0);
+  const v = getViewer(user, avatar), tier = tierOf(d, gname), total = d * count;
+  S.scores[user] = (S.scores[user] || 0) + total; S.tips += total * CFG.lek; v.jump = 1;
+  const label = `${tier.icon} ${tier.label.toUpperCase()}${count > 1 ? ' ×' + count : ''}${gname ? ' · ' + gname : ''}`;
+  if (total >= 100) { S.hero = { t: 0, dur: 3.4, name: user, line: label }; snd.fanfare(); voice.say('k_hero', { text: `Faleminderit, ${user}, për dhuratën!`, prio: true, gap: 3000 }); }
+  switch (tier.key) {
+    case 'cash': pushBanner('money', label, `@${user} hodhi lekë`); toss(v, Math.min(count * 2, 10), d * CFG.lek); voice.say('k_money', { gap: 6000 }); break;
+    case 'rain': pushBanner('money', label, `@${user} → SHI PARASH!`); rain(clamp(8 + total, 14, 60), d * CFG.lek); toss(v, Math.min(count, 6), d * CFG.lek); voice.say('k_money', { gap: 6000 }); break;
+    case 'vip': {
+      const sec = CFG.vipSec + clamp(total * .3, 0, 60), slot = goVip(v, sec);
+      pushBanner('vip', `🛋️ VIP · ${Math.round(sec)} sekonda`, `@${user} ulet me kërcimtaren`); rain(14, d * CFG.lek, slot.x); snd.cheer(); break; }
+    case 'bottle': {
+      const n = clamp(Math.floor(total / 100), 1, 6); bottles(v, n);
+      pushBanner('bottle', `🍾 ${n} SHISHE PËR KLUBIN`, `@${user} qerasi të gjithë!`); rain(20, d * CFG.lek); voice.say('k_bottle', { prio: true, gap: 4000 });
+      if (!vipSlots.some(s => s.viewer === v)) goVip(v, CFG.vipSec + 20); break; }
+    case 'king':
+      crown(v); bottles(v, 6); rain(60, d * CFG.lek); goVipAbort(v);
+      pushBanner('king', '👑 MBRETI I KLUBIT!', '@' + user); snd.fanfare(); snd.cheer(); confetti(540, 700, 60); voice.say('k_king', { prio: true, gap: 0 }); break;
+  }
+}
+const goVipAbort = v => { const s = vipSlots.find(x => x.viewer === v); if (s) vipLeave(s); };
+function onLike(user, count, avatar) {
+  S.likeBudget = Math.min(S.likeBudget + Math.min(count || 1, 5), 10);
+  if (S.likeBudget < 1) return; S.likeBudget -= 1;
+  const v = getViewer(user, avatar); S.tips += CFG.lek * .2;
+  if (S.bills.length < 120) toss(v, 1, 10);
+}
+function onChat(user, text, avatar) {
+  const v = getViewer(user, avatar), low = (text || '').toLowerCase();
+  v.say = (text || '').slice(0, 34); v.sayT = 3.2;
+  if (/^\s*!kenge|^\s*!k[eë]ng[eë]/.test(low)) nextSong(true);
+  if (/^\s*!kerce|^\s*!k[eë]rce/.test(low)) { v.jump = 1; v.shift = (v.shift + 1) % 4; }
+}
+function handle(m) {
+  switch (m.type) {
+    case 'join': return onJoin(m.user, m.avatar);
+    case 'gift': return onGift(m.user, m.gift, m.diamonds, m.count, m.avatar);
+    case 'like': return onLike(m.user, m.count, m.avatar);
+    case 'chat': return onChat(m.user, m.text, m.avatar);
+    case 'status': S.tt = m.state; return;
+  }
+}
+function nextSong(manual) {
+  if (manual && S.t - S.songStart < 12) return;
+  S.song = (S.song + 1) % SONGS.length; S.songStart = S.t; S.nextSong = S.t + 75;
+  pushBanner('song', '🎤 KËNGA E RE:', song().title); voice.say('k_song', { gap: 0, prio: true });
+}
+window.__game = { handle, S, nextSong, CFG };
+
+/* ------------------------------ lidhja WebSocket ------------------------------ */
+(function connect() {
+  if (Q.has('demo') || Q.get('ws') === 'off') return;
+  let ws;
+  try { ws = new WebSocket(CFG.wsUrl); } catch (e) { return setTimeout(connect, 3000); }
+  ws.onopen = () => { S.status = 'lidhur'; };
+  ws.onmessage = e => { try { handle(JSON.parse(e.data)); } catch (_) {} };
+  ws.onclose = () => { S.status = 'offline'; setTimeout(connect, 3000); };
+  ws.onerror = () => ws.close();
+})();
+const fake = () => pick(['Arbër', 'Elira', 'Dritan', 'Blerta', 'Gent', 'Sara', 'Kristi', 'Ola', 'Mark', 'Jon', 'Era', 'Rei', 'Besa', 'Alban']) + (Math.random() < .5 ? '_' + rint(1, 99) : '');
+if (Q.has('demo')) (function loop() {
+  const r = Math.random();
+  if (r < .4) handle({ type: 'join', user: fake() });
+  else if (r < .75) handle({ type: 'gift', user: Math.random() < .6 && S.viewers.length ? pick(S.viewers.filter(v => !v.ambient).concat([{ name: fake() }])).name : fake(), gift: 'Dhuratë', diamonds: pick([1, 1, 1, 5, 5, 10, 30, 30, 100, 100, 1000]), count: rint(1, 3) });
+  else handle({ type: 'like', user: fake(), count: rint(1, 5) });
+  setTimeout(loop, rnd(500, 1800));
+})();
+addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if (k === 'j') handle({ type: 'join', user: fake() });
+  else if (k === 'l') handle({ type: 'like', user: fake(), count: 3 });
+  else if (k === 'k') nextSong(true);
+  else if (k === 'm') snd.toggle();
+  else if ('12345'.includes(k) && k) handle({ type: 'gift', user: fake(), gift: 'Test', diamonds: [1, 5, 30, 100, 1000][+k - 1], count: 1 });
+});
+
+/* ------------------------------ përditësimi ------------------------------ */
+for (let i = 0; i < 3; i++) { const v = addViewer('', true); v.x = v.tx; v.y = v.ty; v.walking = false; v.scale = scaleAt(v.y); const g = v.partner; g.x = g.tx; g.y = g.ty; g.walking = false; g.scale = scaleAt(g.y); }
+function walk(o, dt, speed) {
+  if (!o.walking) return false;
+  const dx = o.tx - o.x, dy = o.ty - o.y, d = Math.hypot(dx, dy), st = speed * dt;
+  if (d <= st) { o.x = o.tx; o.y = o.ty; o.walking = false; o.scale = o.keepScale ? o.scale : scaleAt(o.y); return true; }
+  o.x += dx / d * st; o.y += dy / d * st; if (!o.keepScale) o.scale = scaleAt(o.y); return false;
+}
+function update(dt) {
+  S.t += dt;
+  for (let i = S.timers.length - 1; i >= 0; i--) if (S.timers[i].at <= S.t) { const f = S.timers[i].fn; S.timers.splice(i, 1); f(); }
+  S.likeBudget = Math.min(10, S.likeBudget + dt * 6); S.flash = Math.max(0, S.flash - dt * 1.2); S.shake = Math.max(0, S.shake - dt);
+  const tp = Object.entries(S.scores).sort((a, b) => b[1] - a[1])[0]; S.topName = tp ? tp[0] : '';
+  if (S.t > S.nextSong) nextSong(false);
+
+  for (let i = S.viewers.length - 1; i >= 0; i--) {
+    const v = S.viewers[i]; v.sayT = Math.max(0, (v.sayT || 0) - dt); v.cheers = Math.max(0, v.cheers - dt); if (v.jump > 0) v.jump = Math.max(0, v.jump - dt * 1.6);
+    if (v.state === 'tovip') { if (walk(v, dt, 230)) { const s = v.slot; v.state = 'vip'; v.seated = true; v.scale = 1.0; v.x = s.x - 38 * s.dir; v.y = s.y; s.until = S.t + s.sec;
+        s.dancer.seated = true; s.dancer.x = s.x + 38 * s.dir; s.dancer.y = s.y; s.dancer.flip = -s.dir; v.sofa = s.sofa; s.dancer.sofa = s.sofa; v.seed = s.dancer.seed;
+        v.say = 'Mirë se erdha!'; v.sayT = 2; snd.cheer(); voice.say('k_vip', { gap: 5000 }); pop(s.x, s.y); } }
+    else if (v.state === 'vip') { v.seated = true; const s = v.slot; if (s && S.t > s.until) vipLeave(s); else if (Math.random() < dt * .6) { P({ x: v.x + 40 * (s ? s.dir : 1), y: v.y - 130, vx: rnd(-20, 20), vy: -60, life: 1.4, size: 11, col: '#ff4d6d', type: 'heart' }); } }
+    else if (walk(v, dt, v.leaving ? 210 : 190) && v.leaving) { S.viewers.splice(i, 1); }
+  }
+  for (let i = S.girls.length - 1; i >= 0; i--) {
+    const g = S.girls[i]; g.sayT = Math.max(0, (g.sayT || 0) - dt); g.cheers = Math.max(0, g.cheers - dt);
+    if (walk(g, dt, g.leaving ? 210 : 195) && g.leaving) S.girls.splice(i, 1);
+  }
+  for (const g of vipSlots.map(s => s.dancer)) { g.cheers = Math.max(0, g.cheers - dt); }
+  // kërcimtarja e VIP-it: pret pranë divanit derisa vjen shikuesi
+  for (const s of vipSlots) { const g = s.dancer; if (!g.seated) { g.flip = -s.dir; } }
+  // kamerierët me shishe
+  for (let i = S.waiters.length - 1; i >= 0; i--) {
+    const w = S.waiters[i];
+    if (w.state === 'in') { w.tx = w.target.x + 0; w.ty = w.target.y + 42; if (walk(w, dt, 260)) { w.state = 'serve'; w.t0 = S.t; pop(w.x, w.y); w.bottleTray = false; const tg = w.target; // të gjithë pranë ngrenë gotat
+          for (const o of S.viewers.concat(S.girls, vipSlots.map(s => s.dancer))) if (Math.hypot(o.x - tg.x, (o.y - tg.y) * 1.2) < 230) { o.cheers = 7; }
+          tg.say = 'Gëzuar!'; tg.sayT = 3; voice.say('k_cheers', { gap: 3500 }); snd.cheer(); confetti(w.x, w.y - 100, 18); } }
+    else if (w.state === 'serve' && S.t - w.t0 > 1.2) { w.state = 'out'; w.tx = w.x < W / 2 ? -100 : W + 100; w.ty = w.y; w.walking = true; }
+    else if (w.state === 'out') { if (walk(w, dt, 230)) S.waiters.splice(i, 1); }
+  }
+  for (const k of [singer]) { k.cheers = 0; }
+  // kunora e mbretit
+  if (S.king && S.t > S.king.until) {
+    const v = S.king.v; S.king = null;
+    if (v) { v.crown = false; v.onThrone = false; v.seated = false; v.keepScale = false; if (v.state === 'throne') { v.state = 'floor'; const sp = spot(); v.tx = sp.x; v.ty = sp.y; v.walking = true; if (v.partner) { v.partner.tx = sp.x + 66; v.partner.ty = sp.y; v.partner.walking = true; } } }
+  }
+  if (S.king && Math.random() < dt * 2) bill(rnd(150, 930), 860, rnd(150, 930), rnd(CFG.floorTop + 20, CFG.floorBottom - 20), 1000, { fall: true, dur: rnd(1.2, 2) });
+  if (S.storm > 0) S.storm -= dt;
+  // paratë
+  for (let i = S.bills.length - 1; i >= 0; i--) {
+    const b = S.bills[i];
+    if (b.state === 'fly') {
+      b.t += dt / b.dur; const t = Math.min(b.t, 1);
+      b.x = lerp(b.x0, b.tx, t) + (b.fall ? Math.sin(b.t * 9 + b.flutter) * 28 * (1 - t) : 0);
+      b.y = lerp(b.y0, b.ty, t) - (b.fall ? 0 : Math.sin(t * Math.PI) * b.arc);
+      b.rot += b.vr * dt;
+      if (b.t >= 1) { b.state = 'land'; b.life = 0; if (!b.fall) { floatText(b.x, b.y - 20, `+${money(b.val)} L`, '#7cff9a'); snd.coin(); } P({ x: b.x, y: b.y, vx: rnd(-60, 60), vy: rnd(-160, -40), g: 400, life: .7, size: 5, col: '#ffd60a', type: 'star' }); }
+    } else { b.life += dt; if (b.life > 3) S.bills.splice(i, 1); }
+  }
+  for (let i = S.parts.length - 1; i >= 0; i--) { const p = S.parts[i]; p.life -= dt; if (p.life <= 0) { S.parts.splice(i, 1); continue; } p.vy += p.g * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.rot += p.vr * dt; }
+  for (let i = S.floats.length - 1; i >= 0; i--) { const f = S.floats[i]; f.t += dt; if (f.t > .9) S.floats.splice(i, 1); }
+  if (S.hero) { S.hero.t += dt; if (S.hero.t > S.hero.dur) S.hero = null; }
+  if (!S.banner && S.queue.length) { const n = S.queue.length; S.banner = Object.assign(S.queue.shift(), { t: 0, dur: n > 6 ? 1.1 : n > 3 ? 1.7 : n > 1 ? 2.3 : 3 }); }
+  if (S.banner) { S.banner.t += dt; if (S.banner.t > S.banner.dur) S.banner = null; }
+}
+
+/* ------------------------------ vizatimi i skenës ------------------------------ */
+function drawLights(t) {
+  const hue = song().hue; ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const b = beatNow(), pulse = .6 + .4 * Math.abs(Math.sin(Math.PI * b));
+  for (let i = 0; i < 6; i++) {
+    const x0 = 90 + i * 180, a = Math.PI / 2 + Math.sin(t * .7 + i * 1.3) * .55, L = 1200, sp = .055;
+    const g = ctx.createLinearGradient(x0, 310, x0 + Math.cos(a) * L, 310 + Math.sin(a) * L);
+    g.addColorStop(0, `hsla(${(hue + i * 55) % 360},100%,60%,${.22 * pulse})`); g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(x0, 310); ctx.lineTo(x0 + Math.cos(a - sp) * L, 310 + Math.sin(a - sp) * L); ctx.lineTo(x0 + Math.cos(a + sp) * L, 310 + Math.sin(a + sp) * L); ctx.closePath(); ctx.fill();
+  }
+  if (S.king) { const g = ctx.createRadialGradient(540, 1190, 10, 540, 1190, 360); g.addColorStop(0, 'rgba(255,230,150,.45)'); g.addColorStop(1, 'rgba(255,230,150,0)'); ctx.fillStyle = g; ctx.fillRect(100, 850, 880, 700); }
+  ctx.restore();
+}
+function drawScreen(t) {
+  const sg = song(), x = 240, y = 410, w = 600, h = 200, b = beatNow();
+  ctx.save(); ctx.fillStyle = '#0a0620'; rr(ctx, x - 10, y - 10, w + 20, h + 20, 18); ctx.fill(); ctx.strokeStyle = `hsl(${sg.hue},100%,60%)`; ctx.lineWidth = 4; ctx.shadowColor = ctx.strokeStyle; ctx.shadowBlur = 24; ctx.stroke(); ctx.shadowBlur = 0;
+  const g = ctx.createLinearGradient(x, y, x, y + h); g.addColorStop(0, `hsl(${sg.hue},80%,18%)`); g.addColorStop(1, `hsl(${(sg.hue + 60) % 360},80%,10%)`); ctx.fillStyle = g; rr(ctx, x, y, w, h, 12); ctx.fill();
+  for (let i = 0; i < 28; i++) { const hh = 14 + Math.abs(Math.sin(t * 5 + i * .7 + Math.floor(b) * 1.3)) * 70 * (.5 + .5 * Math.abs(Math.sin(Math.PI * b))); ctx.fillStyle = `hsla(${(sg.hue + i * 6) % 360},100%,60%,.55)`; ctx.fillRect(x + 12 + i * 21, y + h - 10 - hh, 14, hh); }
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '800 20px "Segoe UI",Arial,sans-serif'; ctx.fillStyle = `hsl(${sg.hue},100%,75%)`; ctx.fillText(`🎤  ${sg.title.toUpperCase()}`, x + w / 2, y + 26);
+  const li = Math.floor((S.t - S.songStart) / 3.6) % sg.lines.length, ph = ((S.t - S.songStart) % 3.6) / 3.6, line = sg.lines[li];
+  fitText(ctx, line, w - 40, 36, '900'); const lw = ctx.measureText(line).width;
+  ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.fillText(line, x + w / 2, y + 100);
+  ctx.save(); ctx.beginPath(); ctx.rect(x + w / 2 - lw / 2, y + 60, lw * clamp(ph * 1.15, 0, 1), 80); ctx.clip(); ctx.fillStyle = '#fff'; ctx.shadowColor = `hsl(${sg.hue},100%,60%)`; ctx.shadowBlur = 16; ctx.fillText(line, x + w / 2, y + 100); ctx.restore();
+  ctx.restore();
+}
+function drawStage(t) {
+  // skena
+  const g = ctx.createLinearGradient(0, 760, 0, 830); g.addColorStop(0, '#3a2468'); g.addColorStop(1, '#1b1038'); ctx.fillStyle = g; rr(ctx, 215, 770, 650, 56, 12); ctx.fill();
+  const b = beatNow(), pulse = Math.abs(Math.sin(Math.PI * b)); ctx.strokeStyle = `hsl(${(song().hue + 40) % 360},100%,${55 + pulse * 20}%)`; ctx.lineWidth = 4; ctx.shadowColor = ctx.strokeStyle; ctx.shadowBlur = 20; ctx.stroke(); ctx.shadowBlur = 0;
+  // shtyllat + platformat
+  for (const p of POLES) {
+    ctx.fillStyle = '#2a1a50'; ctx.beginPath(); ctx.ellipse(p.x, p.y + 4, 62, 16, 0, 0, 7); ctx.fill(); ctx.strokeStyle = '#ff9fd1'; ctx.lineWidth = 3; ctx.stroke();
+    const gp = ctx.createLinearGradient(p.x - 5, 0, p.x + 5, 0); gp.addColorStop(0, '#9aa'); gp.addColorStop(.5, '#fff'); gp.addColorStop(1, '#789'); ctx.fillStyle = gp; ctx.fillRect(p.x - 5, 470, 10, p.y - 466);
+    ctx.fillStyle = '#c9c9d6'; ctx.beginPath(); ctx.ellipse(p.x, 470, 20, 6, 0, 0, 7); ctx.fill();
+  }
+  // topat disko
+  for (const x of [60, 1020]) {
+    ctx.strokeStyle = '#777'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, 312); ctx.lineTo(x, 380); ctx.stroke();
+    const gb = ctx.createRadialGradient(x - 8, 392, 4, x, 400, 34); gb.addColorStop(0, '#fff'); gb.addColorStop(1, '#7a7a9a'); ctx.fillStyle = gb; ctx.beginPath(); ctx.arc(x, 400, 28, 0, 7); ctx.fill();
+    for (let i = 0; i < 14; i++) { ctx.fillStyle = `hsla(${(i * 50 + t * 80) % 360},100%,70%,${.6 + .4 * Math.sin(t * 6 + i)})`; ctx.fillRect(x - 22 + (i % 5) * 9, 380 + Math.floor(i / 5) * 12, 6, 6); }
+  }
+}
+function drawFloor(t) {
+  const b = beatNow(), hue = song().hue, rows = 8, cols = 10, top = CFG.floorTop, bot = CFG.floorBottom, tw = 700, bw = 1060;
+  for (let r = 0; r < rows; r++) {
+    const y0 = top + (bot - top) * r / rows, y1 = top + (bot - top) * (r + 1) / rows, w0 = tw + (bw - tw) * r / rows, w1 = tw + (bw - tw) * (r + 1) / rows;
+    for (let c = 0; c < cols; c++) {
+      const x00 = W / 2 - w0 / 2 + w0 * c / cols, x01 = W / 2 - w0 / 2 + w0 * (c + 1) / cols, x10 = W / 2 - w1 / 2 + w1 * c / cols, x11 = W / 2 - w1 / 2 + w1 * (c + 1) / cols;
+      const on = (Math.floor(b / 2) + r * 3 + c * 5) % 7 < 3, h = (hue + (r + c) * 18 + (on ? 0 : 60)) % 360;
+      ctx.fillStyle = `hsla(${h},90%,${on ? 42 + 14 * Math.abs(Math.sin(Math.PI * b)) : 16}%,${on ? .75 : .5})`; poly(ctx, [[x00, y0], [x01, y0], [x11, y1], [x10, y1]]); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,.07)'; ctx.lineWidth = 1.5; ctx.stroke();
+    }
+  }
+}
+function drawSofas() {
+  for (const s of vipSlots) {
+    const x = s.x - 110, y = s.y - 70;
+    ctx.fillStyle = shade(s.sofa, -.25); rr(ctx, x, y, 220, 110, 24); ctx.fill(); ctx.strokeStyle = OUT; ctx.lineWidth = 3.5; ctx.stroke();
+    ctx.fillStyle = s.sofa; rr(ctx, x + 6, y + 40, 208, 66, 18); ctx.fill(); ctx.stroke();
+    // tavolinë me shishe
+    const tx = s.x + 8 * s.dir, ty = s.y + 20; ctx.fillStyle = '#1e1e34'; ctx.beginPath(); ctx.ellipse(tx, ty + 34, 34, 10, 0, 0, 7); ctx.fill();
+    if (s.viewer && s.viewer.seated) { ctx.fillStyle = '#1b6e3a'; rr(ctx, tx - 14, ty, 9, 32, 3); ctx.fill(); ctx.fillStyle = '#d4af37'; ctx.fillRect(tx - 12, ty - 8, 5, 8); glass(ctx, tx + 8, ty + 32); glass(ctx, tx + 20, ty + 32); }
+    if (s.viewer && s.viewer.seated) { const left = Math.max(0, Math.ceil(s.until - S.t)); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '800 17px "Segoe UI",Arial,sans-serif'; const lab = `VIP · ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`; const w = ctx.measureText(lab).width + 20; ctx.fillStyle = 'rgba(12,8,30,.85)'; rr(ctx, s.x - w / 2, y - 22, w, 26, 13); ctx.fill(); ctx.strokeStyle = '#ffd60a'; ctx.lineWidth = 2; ctx.stroke(); ctx.fillStyle = '#ffd60a'; ctx.fillText(lab, s.x, y - 9); }
+  }
+}
+function drawThrone() {
+  if (!S.king || !S.king.v) return; const v = S.king.v, x = 540, y = 1210;
+  ctx.fillStyle = '#7a1f3a'; rr(ctx, x - 70, y - 190, 140, 200, 30); ctx.fill(); ctx.strokeStyle = '#ffd60a'; ctx.lineWidth = 5; ctx.stroke();
+  ctx.fillStyle = '#5a1530'; rr(ctx, x - 90, y - 70, 180, 90, 20); ctx.fill(); ctx.stroke();
+  if (!v.onThrone) { v.onThrone = true; v.state = 'throne'; if (v.partner) { v.partner.tx = 540 + 110; v.partner.ty = 1230; v.partner.walking = true; } }
+}
+function drawBill(b) {
+  ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(Math.sin(b.rot) * .6); if (b.state === 'land') { ctx.globalAlpha = clamp((3 - b.life) / 1.2, 0, 1); ctx.scale(1, .55); }
+  const k = b.fall ? 1 : 1; ctx.fillStyle = b.col; rr(ctx, -34 * k, -16 * k, 68 * k, 32 * k, 4); ctx.fill(); ctx.strokeStyle = shade(b.col, -.5); ctx.lineWidth = 2.5; ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,.4)'; ctx.lineWidth = 1.5; rr(ctx, -29, -11, 58, 22, 3); ctx.stroke(); ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.beginPath(); ctx.arc(0, 0, 8, 0, 7); ctx.fill();
+  ctx.fillStyle = '#123'; ctx.font = '900 11px "Segoe UI",Arial,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(Math.min(b.val, 9999)), 0, 1); ctx.restore();
+}
+function drawParts() {
+  for (const p of S.parts) {
+    const k = p.life / p.max;
+    if (p.type === 'confetti') { ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.globalAlpha = clamp(k * 2, 0, 1); ctx.fillStyle = p.col; ctx.fillRect(-p.size / 2, -p.size / 4, p.size, p.size / 2); ctx.restore(); ctx.globalAlpha = 1; }
+    else if (p.type === 'star') { ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = clamp(k * 1.5, 0, 1); ctx.fillStyle = p.col; ctx.font = `${p.size * 3}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('✦', p.x, p.y); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; }
+    else if (p.type === 'heart') { ctx.globalAlpha = clamp(k * 1.5, 0, 1); ctx.fillStyle = p.col; ctx.font = `${p.size * 2}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('♥', p.x, p.y); ctx.globalAlpha = 1; }
+    else { ctx.globalAlpha = clamp(k * 1.6, 0, 1); ctx.fillStyle = p.col; ctx.beginPath(); ctx.arc(p.x, p.y, p.size * (.5 + k * .5), 0, 7); ctx.fill(); ctx.globalAlpha = 1; }
+  }
+}
+function drawBanner() {
+  const bn = S.banner; if (!bn) return;
+  const a = .3, t = bn.t, out = bn.dur - a; let k = t < a ? 1 - Math.pow(1 - t / a, 3) : t > out ? 1 - (t - out) / a : 1; k = clamp(k, 0, 1);
+  const w = 940, h = 96, x = (W - w) / 2 + (1 - k) * -W * .6, y = 300;
+  const acc = { join: '#ff4fa3', money: '#3ddc84', vip: '#ffd60a', bottle: '#4cc9f0', king: '#b84dff', song: '#ff9f1c' }[bn.kind] || '#ff4fa3';
+  ctx.save(); ctx.globalAlpha = k; ctx.shadowColor = acc; ctx.shadowBlur = 24; ctx.fillStyle = 'rgba(10,6,28,.9)'; rr(ctx, x, y, w, h, 22); ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = acc; ctx.lineWidth = 3; ctx.stroke();
+  ctx.fillStyle = acc; rr(ctx, x, y, 14, h, 7); ctx.fill(); ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  fitText(ctx, bn.l1, w - 70, 26, '800'); ctx.fillStyle = acc; ctx.fillText(bn.l1, x + 38, y + 36);
+  fitText(ctx, bn.l2, w - 70, 42, '900'); ctx.fillStyle = '#fff'; ctx.fillText(bn.l2, x + 38, y + 80); ctx.restore();
+}
+function drawHero() {
+  const h = S.hero; if (!h) return; const k = h.t / h.dur, a = clamp(k < .12 ? k / .12 : k > .8 ? (1 - k) / .2 : 1, 0, 1), sc = .85 + .15 * Math.min(1, k / .12);
+  ctx.save(); ctx.translate(W / 2, 880); ctx.scale(sc, sc); ctx.globalAlpha = a;
+  ctx.shadowColor = '#ffb703'; ctx.shadowBlur = 40; ctx.fillStyle = 'rgba(12,8,32,.93)'; rr(ctx, -400, -90, 800, 180, 30); ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = '#ffd60a'; ctx.lineWidth = 5; ctx.stroke();
+  ctx.font = '80px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('🥂', -320, 6);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.font = '900 24px "Segoe UI",Arial,sans-serif'; ctx.fillStyle = '#ffd60a'; ctx.fillText('★ MIKPRITËSI I NATËS', -240, -36);
+  fitText(ctx, '@' + h.name, 600, 54, '900'); ctx.fillStyle = '#fff'; ctx.fillText('@' + h.name, -240, 22); fitText(ctx, h.line, 600, 32, '800'); ctx.fillStyle = '#ff9f1c'; ctx.fillText(h.line, -240, 66); ctx.restore();
+}
+function drawHUD(t) {
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  const hue = song().hue, pulse = .75 + .25 * Math.abs(Math.sin(Math.PI * beatNow()));
+  ctx.font = '900 96px Impact,"Arial Black",sans-serif'; ctx.save(); ctx.shadowColor = `hsl(${hue},100%,60%)`; ctx.shadowBlur = 36 * pulse;
+  outlined(ctx, 'KLUBI LIVE', W / 2, 205, '#fff', `hsl(${hue},100%,${40 + 20 * pulse}%)`, 12); ctx.restore();
+  ctx.fillStyle = '#e11d48'; rr(ctx, 60, 130, 118, 44, 12); ctx.fill(); ctx.fillStyle = `rgba(255,255,255,${.6 + .4 * Math.sin(t * 4)})`; ctx.beginPath(); ctx.arc(86, 152, 8, 0, 7); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.font = '900 24px "Segoe UI",Arial,sans-serif'; ctx.textAlign = 'left'; ctx.fillText('LIVE', 106, 161); ctx.textAlign = 'center';
+  const dt = '🎮  LOJË ANIMACIONI · ARGËTIM · PA PËRMBAJTJE EKSPLICITE';
+  fitText(ctx, dt, 960, 24, '900'); const dw = Math.min(1000, ctx.measureText(dt).width + 50);
+  ctx.fillStyle = '#ffd60a'; rr(ctx, (W - dw) / 2, 232, dw, 52, 14); ctx.fill(); ctx.strokeStyle = '#111'; ctx.lineWidth = 3; ctx.stroke(); ctx.fillStyle = '#111'; ctx.textBaseline = 'middle'; ctx.fillText(dt, W / 2, 259);
+  if (snd.blocked()) { ctx.fillStyle = 'rgba(8,10,28,.85)'; rr(ctx, 40, 184, 128, 36, 12); ctx.fill(); ctx.fillStyle = '#ffd60a'; ctx.font = '800 17px "Segoe UI",Arial,sans-serif'; ctx.fillText('🔊 KLIKO', 104, 203); }
+  drawHero(); drawBanner();
+  // numëruesi i bakshishit
+  const real = S.viewers.filter(v => !v.ambient && !v.leaving).length, top = Object.entries(S.scores).sort((a, b) => b[1] - a[1]).slice(0, 3), medals = ['🥇', '🥈', '🥉'];
+  ctx.fillStyle = 'rgba(10,6,28,.82)'; rr(ctx, 40, 1590, W - 80, 84, 18); ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,.2)'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.textBaseline = 'middle'; ctx.font = '800 25px "Segoe UI",Arial,sans-serif'; ctx.fillStyle = '#fff'; ctx.fillText(`💃 ${real} në klub  ·  💰 ${money(S.tips)} LEK bakshish  ·  🛋️ ${vipSlots.filter(s => s.viewer).length}/4 VIP`, W / 2, 1615);
+  const tt = top.length ? top.map(([n, s], i) => `${medals[i]} @${n.length > 11 ? n.slice(0, 10) + '…' : n} ${s}`).join('   ') : '🏆 Dërgo një dhuratë për të hyrë në renditje!';
+  fitText(ctx, tt, W - 130, 24, '700'); ctx.fillStyle = '#ffd60a'; ctx.fillText(tt, W / 2, 1651);
+  const lw = (W - 80) / TIERS.length;
+  TIERS.forEach((tr, i) => { const x = 40 + i * lw; ctx.fillStyle = 'rgba(10,6,28,.82)'; rr(ctx, x + 3, 1690, lw - 6, 66, 14); ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.font = '700 26px "Segoe UI",Arial,sans-serif'; ctx.fillText(tr.icon, x + lw / 2, 1712); fitText(ctx, tr.label, lw - 12, 15, '800'); ctx.fillStyle = '#fff'; ctx.fillText(tr.label, x + lw / 2, 1735); ctx.font = '700 13px "Segoe UI",Arial,sans-serif'; ctx.fillStyle = '#ffd60a'; ctx.fillText(`💎 ${tr.min}+`, x + lw / 2, 1750); });
+  ctx.font = '700 22px "Segoe UI",Arial,sans-serif'; outlined(ctx, 'LIKE = lekë për kërcimtaret  ·  Shkruaj !kenge për këngën tjetër', W / 2, 1782, '#fff', 'rgba(0,0,0,.8)', 4);
+  outlined(ctx, '🥂 Dhurata e madhe = VIP me kërcimtaren ose shishe për të gjithë klubin!', W / 2, 1814, '#ffd60a', 'rgba(0,0,0,.8)', 4);
+  if (Q.has('debug')) { const L = [`loja ↔ server: ${S.status}`, `TikTok: ${S.tt === 'connected' ? 'LIDHUR ✔' : 'duke pritur live-in…'}`, `zëri: ${voice.status()}`]; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.font = '700 18px monospace'; L.forEach((x, i) => outlined(ctx, x, 14, 1860 + i * 22, '#7cff9a', '#000', 4)); }
+}
+function render() {
+  const t = S.t, b = beatNow();
+  ctx.drawImage(bg, 0, 0);
+  ctx.save(); if (S.shake > 0) ctx.translate(rnd(-1, 1) * S.shake * 12, rnd(-1, 1) * S.shake * 12);
+  drawLights(t); drawScreen(t); drawStage(t); drawFloor(t); drawSofas(); drawThrone();
+  // të gjithë personazhet sipas thellësisë
+  const list = [singer, ...stageGirls, ...vipSlots.map(s => s.dancer), ...S.girls, ...S.viewers, ...S.waiters];
+  singer.mouth = true; singer.seed = 0; for (const p of stageGirls) p.mouth = false;
+  list.sort((a, c) => a.y - c.y);
+  for (const o of list) {
+    if (o.kind === 'pole') { // rrotullim rreth shtyllës
+      const ph = t * 1.6 + o.seed, px = o.pole.x + Math.sin(ph) * 20; const q = { ...o, x: px, y: o.pole.y - Math.abs(Math.sin(ph * .5)) * 18, shift: 0, seed: o.seed, glassAlways: false };
+      figure(q, t); continue;
+    }
+    if (o.state === 'throne' && S.king) { o.x = 540 - 0; o.y = 1195; o.scale = 1.1; o.seated = true; o.sofa = '#5a1530'; o.keepScale = true; }
+    figure(o, t);
+  }
+  for (const o of list) if (o.kind === 'viewer' || o.kind === 'hostess' || o.kind === 'vip') tag(o);
+  for (const bl of S.bills) drawBill(bl);
+  drawParts();
+  for (const f of S.floats) { const k = f.t / .9; ctx.save(); ctx.translate(f.x, f.y - k * 50); ctx.globalAlpha = 1 - k * k; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '900 30px Impact,"Arial Black",sans-serif'; outlined(ctx, f.text, 0, 0, f.col, '#000', 6); ctx.restore(); }
+  ctx.restore();
+  if (S.flash > 0) { ctx.globalAlpha = Math.min(.3, S.flash); ctx.fillStyle = S.flashCol; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
+  ctx.drawImage(vig, 0, 0);
+  drawHUD(t);
+}
+let last = performance.now();
+function frame(now) { const dt = Math.min(.05, (now - last) / 1000); last = now; update(dt); render(); requestAnimationFrame(frame); }
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

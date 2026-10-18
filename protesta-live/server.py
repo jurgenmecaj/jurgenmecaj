@@ -110,10 +110,10 @@ def find_edge():
     return None
 
 
-def open_window(http_port: int, ws_port: int) -> None:
+def open_window(http_port: int, ws_port: int, page: str = "") -> None:
     """Hap lojën si dritare pa shirit adresash. Përdor profil të veçantë të shfletuesit, që zëri të lejohet vetvetiu
     (--autoplay-policy) dhe të mos mbetet versioni i vjetër në cache."""
-    url = f"http://localhost:{http_port}/?ws=ws://localhost:{ws_port}&v={int(time.time())}"
+    url = f"http://localhost:{http_port}/{page}?ws=ws://localhost:{ws_port}&v={int(time.time())}"
     try:
         if sys.platform == "win32":
             exe = find_edge()
@@ -178,6 +178,7 @@ async def main() -> None:
     ap.add_argument("--ws-port", type=int, default=8124)
     ap.add_argument("--http-port", type=int, default=8123)
     ap.add_argument("--open", action="store_true", help="hap dritaren e lojës pasi serveri niset")
+    ap.add_argument("--page", default="", help="faqja për të hapur, p.sh. klubi.html (parazgjedhje: protesta)")
     args = ap.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
@@ -204,7 +205,7 @@ async def main() -> None:
         raise SystemExit(f"Porta {args.ws_port} eshte e zene. Provo: python server.py --ws-port 9124")
     log.info("Folderi i lojës: %s", ROOT)
     if args.open:
-        open_window(args.http_port, args.ws_port)
+        open_window(args.http_port, args.ws_port, args.page)
     log.info("LOJA GATI: hap http://localhost:%d   (TikTok lidhet më vonë me tiktok_bridge.py)", args.http_port)
     async with ws_server:
         if args.demo:

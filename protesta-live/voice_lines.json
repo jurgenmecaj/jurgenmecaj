@@ -188,5 +188,75 @@
   "text": "Faleminderit për dhuratën!",
   "voice": "anila",
   "rate": "+5%"
+ },
+ "k_d1": {
+  "text": "Hajde, kërce me mua!",
+  "voice": "anila",
+  "rate": "+10%"
+ },
+ "k_d2": {
+  "text": "Uuu, sa bukur!",
+  "voice": "anila",
+  "rate": "+15%"
+ },
+ "k_d3": {
+  "text": "Më lart duart!",
+  "voice": "anila",
+  "rate": "+10%"
+ },
+ "k_d4": {
+  "text": "Eja këtu, mos ki turp!",
+  "voice": "anila",
+  "rate": "+5%"
+ },
+ "k_d5": {
+  "text": "Kjo natë është e jona!",
+  "voice": "anila",
+  "rate": "+10%"
+ },
+ "k_d6": {
+  "text": "Gëzuar të gjithëve!",
+  "voice": "anila",
+  "rate": "+10%"
+ },
+ "k_d7": {
+  "text": "Vazhdo, vazhdo, mos u ndal!",
+  "voice": "anila",
+  "rate": "+10%"
+ },
+ "k_d8": {
+  "text": "Sa mirë që erdhët sonte!",
+  "voice": "anila",
+  "rate": "+5%"
+ },
+ "k_thanks_cash": {
+  "text": "Faleminderit për lekët!",
+  "voice": "anila",
+  "rate": "+10%"
+ },
+ "k_thanks_rain": {
+  "text": "Oh, sa shumë para! Faleminderit!",
+  "voice": "anila",
+  "rate": "+10%"
+ },
+ "k_thanks_vip": {
+  "text": "Mirë se erdhe, ulu pranë meje!",
+  "voice": "anila",
+  "rate": "+5%"
+ },
+ "k_thanks_bottle": {
+  "text": "Uuu, shishe! Gëzuar!",
+  "voice": "anila",
+  "rate": "+15%"
+ },
+ "k_thanks_king": {
+  "text": "Mbreti ynë! Të adhurojmë!",
+  "voice": "anila",
+  "rate": "+10%"
+ },
+ "k_barman": {
+  "text": "Një shishe e re për klubin!",
+  "voice": "ilir",
+  "rate": "+5%"
  }
 }

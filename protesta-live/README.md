@@ -66,14 +66,18 @@ gur (💎10+) → policia mpaket 2 s; shkëmb/molotov (💎30+) → policia rrë
 
 ## 🎤 Loja e dytë: KLUBI LIVE (`klubi.html`)
 Klub nate i animuar, me të njëjtën urë TikTok (`2-TIKTOK.bat`). Nise me **`1-KLUBI.bat`** (`1-KLUBI.bat demo` për provë).
-- Kush hyn në live **hyn në klub** dhe kërcen me një kërcimtare. Kërcimtaret e shtyllës kërcejnë në skenë, një këngëtar kërkon me mikrofon
-  (tekst karaoke në ekran) dhe muzika sintetizohet vetë (3 stile: house, hip-hop, valle ballkanike — `!kenge` ose `K` ndërron këngën).
-- **Dhuratat**: 💎1+ 💵 hedh lekë te kërcimtarja · 💎5+ 💸 shi parash mbi pistë · 💎30+ 🛋️ **VIP**: shkon në krah dhe ulet me kërcimtaren
-  (sa më e madhe dhurata, aq më gjatë) · 💎100+ 🍾 **shishe për klubin** (kamerierë me shkëndija, të gjithë ngrenë gotat, 1 shishe për çdo 100💎, deri 6)
-  · 💎1000+ ose dhuratë me emër *Lion/Luan* 👑 **MBRETI I KLUBIT**: fron, kurorë, stuhi parash. `CFG`/`TIERS` te klubi.html ndryshojnë pragjet.
-- Numëruesi **bakshish** në LEK (1💎 = 100 L), renditja e dhuruesve, karta e mikpritësit, zëri shqip (si te loja tjetër) dhe tinguj (monedha, tapa, spërkatje, duartrokitje).
-- Personazhet janë të stilizuar dhe të veshur; për shikuesit përdoren figura të vizatuara me emër, jo foto reale (`?photos=1` ndez fotot e profilit nëse e do).
-- Kujdes: tema klubi/kërcimtare mund t'i nënshtrohet rregullave të TikTok-ut për përmbajtje sugjeruese; mbaje stilin e pastër siç është.
+- **Kërcimtaret** lëvizin me kyçe, bërryla dhe gjunjë (IK) dhe kanë 10 koreografi në ritëm të muzikës: valëvitje, hap-prekje, hip, rrotullim me fustan të hapur,
+  duartrokitje, goditje këmbe, flokë, shimmy, zhytje. Kërcimtaret në shtyllë ngjiten, rrotullohen dhe bëjnë poza. Kush hyn kërcen me një kërcimtare që i përputhet.
+- **Zëra**: kërcimtaret flasin shqip (me balonë): "Hajde, kërce me mua!", "Faleminderit për lekët!", "Uuu, shishe! Gëzuar!"…; shpesh bëjnë edhe "uuu/hej"
+  të sintetizuar. **Këngëtari këndon** me zë të sintetizuar (çdo fjalë e vargut është notë me zanoren e saj) dhe teksti shfaqet si karaoke. Zërat shqip: shih `voice_lines.json` (klipet me `3-ZERAT.bat`).
+- **Mjedisi**: skenë me altoparlantë që pulsojnë, ekran LED me karaoke, prozhektorë lëvizës, pistë me pllaka drite, mjegull, reflektime, **bar me barmen** që shkund,
+  **6 tavolina** me llamba, gota dhe karrige — shikuesit ulen aty herë pas here — dhe 4 **divane VIP**.
+- **Dhuratat**: 💎1+ 💵 lekë te kërcimtarja · 💎5+ 💸 shi parash · 💎30+ 🛋️ **VIP** (ulesh me kërcimtaren) · 💎100+ 🍾 **shishe në tavolina** (kamerierë me shkëndija, të gjithë ngrenë gotat)
+  · 💎1000+ ose emër *Lion/Luan* 👑 **MBRETI I KLUBIT** (fron, kurorë, stuhi parash). Pragjet: `TIERS`/`CFG` te klubi.html.
+- **Muzika** sintetizohet vetë (house / hip-hop / valle ballkanike; `!kenge` ose `K`). Numërues bakshishi në LEK, renditje, karta e mikpritësit.
+- Personazhet janë të stilizuar dhe të veshur; shikuesit shfaqen me figura të vizatuara, jo me foto reale (`?photos=1` e ndez).
+- Nëse ecën ngadalë: `?norefl=1` (pa reflektime). `?bloom=1` shton shkëlqim (kërkon GPU).
+- Kujdes: tema klubi/kërcimtare mund t'i nënshtrohet rregullave të TikTok-ut për përmbajtje sugjeruese; mbaje stilin e pastër.
 
 ## Provë e shpejtë (pa TikTok)
 Hape `index.html` në shfletues me `?demo=1` (simulim automatik), ose pa parametra dhe shtyp:

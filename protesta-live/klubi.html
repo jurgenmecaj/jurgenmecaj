@@ -31,9 +31,10 @@ const CFG = {
   lek: 100,                 // sa lekë vlen 1 💎 (për numëruesin e bakshishit)
   maxFloor: 12,             // sa shikues njëkohësisht në pistë
   vipSec: 25,               // sekonda bazë në VIP
-  photos: Q.has('photos'),  // foto profili në vend të figurave të vizatuara
+  photos: Q.get('photos') !== '0',  // fotot e profilit të ndjekësve në fytyrën e personazhit (?photos=0 i fik)
   floorTop: 1100, floorBottom: 1575,
-  exitEvery: Q.has('exit') ? +Q.get('exit') : 50,   // sekonda mes daljeve "pjesë-pjesë" nga lokali (0 = pa dalje)
+  exitEvery: Q.has('exit') ? +Q.get('exit') : 25,   // sekonda mes kontrolleve për daljen (0 = pa dalje)
+  idleSec: Q.has('idle') ? +Q.get('idle') : 60,     // dalin ata pa asnjë aktivitet (like/dhuratë/koment) për kaq sekonda
 };
 // MENUJA: 5 dhurata me ikonë → çfarë bëjnë. Njihen sipas emrit të dhuratës ose sipas vlerës në diamante.
 // Çdo dhuratë TJETËR (jashtë menusë) = emri në LED + gotë për gjithë lokalin.
@@ -100,7 +101,7 @@ const S = {
   byName: new Map(), queue: [], banner: null, hero: null, scores: {}, tips: 0, topName: '',
   song: 0, songStart: 0, nextSong: 75, lastLine: -1, king: null, flash: 0, flashCol: '#fff', nextTalk: 6,
   status: 'offline', tt: 'waiting', likeBudget: 0, joined: 0, shake: 0, dbg: { avOk: 0, avFail: 0 },
-  away: [], guards: [], nextExit: Math.min(50, CFG.exitEvery || 50), likeCnt: 0, used: {},
+  away: [], guards: [], nextExit: Math.min(40, CFG.exitEvery || 40), photos: {}, likeCnt: 0, used: {},
 };
 const later = (sec, fn) => S.timers.push({ at: S.t + sec, fn });
 const song = () => SONGS[S.song];
@@ -344,6 +345,12 @@ function neon(g, text, x, y, col, size) {
 
 /* ------------------------------ koreografia (kyçe, bërryla, gjunjë) ------------------------------ */
 const scaleAt = y => .74 + clamp((y - CFG.floorTop) / (CFG.floorBottom - CFG.floorTop), 0, 1) * .42;
+function avatarCircle(img, x, y, r, ring) {
+  ctx.save(); ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.clip();
+  if (img && img.complete && img.naturalWidth) ctx.drawImage(img, x - r, y - r, r * 2, r * 2);
+  else { const g = ctx.createLinearGradient(x - r, y - r, x + r, y + r); g.addColorStop(0, '#5a3a9a'); g.addColorStop(1, '#2a1a5a'); ctx.fillStyle = g; ctx.fillRect(x - r, y - r, r * 2, r * 2); ctx.fillStyle = '#fff'; ctx.font = `${r * 1.1}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('🙂', x, y + 2); }
+  ctx.restore(); ctx.lineWidth = 4; ctx.strokeStyle = ring || '#fff'; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.stroke();
+}
 function limb(c, x0, y0, x1, y1, w, col) {
   c.lineCap = 'round'; c.strokeStyle = OUT; c.lineWidth = w + 5; c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke();
   c.strokeStyle = col; c.lineWidth = w; c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke();
@@ -397,7 +404,9 @@ function poseOf(o, t) {
   }
   if (o.cross) { const m = baseOut(); m.hL = [10, -36]; m.hR = [-10, -38]; m.sx = Math.sin(t * 1.2) * 1.2; m.bob = 1; if (o.walking) { const q = Math.sin(t * 11); m.fL = [-10 + q * 10, -1]; m.fR = [10 - q * 10, -1]; m.bob = Math.abs(q) * 4; } return m; }
   if (o.bartender) {
-    const m = baseOut(), shake = Math.sin(t * 10); m.hR = [18 + shake * 4, -58 + shake * 12]; m.hL = [-18, -20]; m.bob = 2; m.sx = shake * 2; m.tilt = shake * .04; return m;
+    const m = baseOut(), shake = Math.sin(t * 10);
+    if (o.give > S.t) { m.hR = [36, -36 + Math.sin(t * 8) * 3]; m.hL = [-18, -20]; m.bob = 1; m.tilt = .05; return m; }   // i jep gotën kamerieres
+    m.hR = [18 + shake * 4, -58 + shake * 12]; m.hL = [-18, -20]; m.bob = 2; m.sx = shake * 2; m.tilt = shake * .04; return m;
   }
   if (o.walking) {
     const m = baseOut(), s = Math.sin(t * 11 + ph); m.bob = Math.abs(s) * 5; m.fL = [-10 + s * 11, -1 - Math.max(0, Math.cos(t * 11 + ph)) * 7]; m.fR = [10 - s * 11, -1 - Math.max(0, -Math.cos(t * 11 + ph)) * 7]; m.hL = [-22 + s * 6, -12]; m.hR = [22 - s * 6, -12]; m.hair = s * 6; return m;
@@ -556,7 +565,7 @@ function addViewer(name, ambient = false) {
   const live = S.viewers.filter(v => !v.leaving && v.state === 'floor');
   if (live.length >= CFG.maxFloor) { const victim = live.find(v => v.ambient) || live[0]; sendOut(victim); }
   const sp = spot(), side = Math.random() < .5 ? -1 : 1, ex = side < 0 ? -80 : W + 80, ey = CFG.floorBottom - 30;
-  const v = Object.assign(look(false), { kind: 'viewer', name: ambient ? '' : name, ambient, x: ex, y: ey, tx: sp.x, ty: sp.y, walking: true, state: 'floor', scale: scaleAt(ey), cheers: 0, say: '', sayT: 0, jump: 0, leaving: false, born: S.t, sitAt: S.t + rnd(30, 70) });
+  const v = Object.assign(look(false), { kind: 'viewer', name: ambient ? '' : name, ambient, x: ex, y: ey, tx: sp.x, ty: sp.y, walking: true, state: 'floor', scale: scaleAt(ey), cheers: 0, say: '', sayT: 0, jump: 0, leaving: false, born: S.t, act: S.t, sitAt: S.t + rnd(30, 70) });
   const g = newGirl('hostess', ex + side * -70, ey); g.tx = sp.x + 66; g.ty = sp.y; g.walking = true; g.flip = -1; g.partnerOf = v; g.shift = v.shift; v.partner = g;
   S.viewers.push(v); S.girls.push(g); if (!ambient) S.byName.set(name, v);
   return v;
@@ -571,9 +580,9 @@ function sendOut(v) {
 function setPhoto(v, url) {
   if (!CFG.photos || !url || v.img || v.ambient) return;
   const img = new Image(); img.onload = () => S.dbg.avOk++; img.onerror = () => { S.dbg.avFail++; if (v.img === img) v.img = null; };
-  img.src = /^(data:|https?:)/.test(url) ? url : (location.protocol.startsWith('http') ? '' : 'http://localhost:8123') + url; v.img = img;
+  img.src = /^(data:|https?:)/.test(url) ? url : (location.protocol.startsWith('http') ? '' : 'http://localhost:8123') + url; v.img = img; S.photos[v.name] = img;
 }
-const getViewer = (name, avatar) => { const v = S.byName.get(name) || addViewer(name); setPhoto(v, avatar); return v; };
+const getViewer = (name, avatar) => { const v = S.byName.get(name) || addViewer(name); setPhoto(v, avatar); v.act = S.t; return v; };
 
 // kërcimtarja flet: zë shqip + balonë + zë i sintetizuar
 function dancerSay(g, key, gap = 6000, pitch) {
@@ -606,22 +615,23 @@ function vipLeave(slot, silent) {
   const v = slot.viewer; slot.viewer = null; slot.until = 0; const d = slot.dancer; d.seated = false; d.x = d.homeX; d.y = d.homeY; d.scale = 1;
   if (v) { v.seated = false; v.slot = null; if (!silent) { v.state = 'floor'; const sp = spot(); v.tx = sp.x; v.ty = sp.y; v.walking = true; v.scale = scaleAt(v.y); v.sitAt = S.t + rnd(30, 60); if (v.partner) { v.partner.tx = sp.x + 66; v.partner.ty = sp.y; v.partner.walking = true; } } }
 }
+function barEnd(tg) { return { x: tg.x < W / 2 ? 296 : 784, y: 1104 }; }
 function serveGlass(v) {
-  const side = v.x < W / 2 ? -1 : 1;
-  S.waiters.push(Object.assign(look(Math.random() < .5), { kind: 'waiter', name: '', x: side < 0 ? -80 : W + 80, y: CFG.floorBottom + 10, tx: v.x, ty: v.y + 46, walking: true, state: 'in', scale: scaleAt(CFG.floorBottom), glassTray: true, glassOnly: true, target: v, top: '#222', dress: '#111', cheers: 0, hem: 24, say: '', sayT: 0 }));
+  const be = barEnd(v); bartender.give = S.t + 1.4; bartender.say = `Gotë për ${v.name || 'ty'}!`; bartender.sayT = 2.4; snd.clink(); voice.say('k_bring', { gap: 5000 });
+  S.waiters.push(Object.assign(look(true), { kind: 'waiter', name: '', x: be.x, y: be.y, home: be, tx: v.x, ty: v.y + 46, walking: true, state: 'in', scale: scaleAt(be.y), glassTray: true, glassOnly: true, target: v, top: '#222', dress: '#111', cheers: 0, hem: 24, say: '', sayT: 0 }));
 }
 function toastAll() { // gotë për gjithë lokalin: të gjithë ngrenë gotat, kamerierë kalojnë nëpër pistë
   for (const o of S.viewers.concat(girlsAll(), [singer, bartender])) o.cheers = 8;
   snd.cheer(); snd.clink(); S.flash = .15; S.flashCol = '#ffe9a8'; confetti(540, 760, 40); confetti(300, 1000, 20); confetti(780, 1000, 20);
-  for (let i = 0; i < 3; i++) later(i * .8, () => { const side = i % 2 ? 1 : -1; S.waiters.push(Object.assign(look(i !== 1), { kind: 'waiter', sweep: true, name: '', x: side < 0 ? -80 : W + 80, y: CFG.floorBottom - 40 - i * 130, tx: side < 0 ? W + 100 : -100, ty: CFG.floorBottom - 40 - i * 130, walking: true, state: 'sweep', scale: scaleAt(CFG.floorBottom - i * 130), glassTray: true, top: '#222', dress: '#111', cheers: 0, hem: 24, say: '', sayT: 0 })); snd.clink(); });
+  for (let i = 0; i < 3; i++) later(i * .8, () => { const side = i % 2 ? 1 : -1; bartender.give = S.t + 1; S.waiters.push(Object.assign(look(i !== 1), { kind: 'waiter', sweep: true, name: '', x: side < 0 ? 296 : 784, y: 1110 + i * 20, tx: side < 0 ? W + 100 : -100, ty: CFG.floorBottom - 60 - i * 150, walking: true, state: 'sweep', scale: scaleAt(1110), glassTray: true, top: '#222', dress: '#111', cheers: 0, hem: 24, say: '', sayT: 0 })); snd.clink(); });
 }
 function bottles(v, n) {
   const targets = [], spots = S.tables.concat(vipSlots.filter(s => s.viewer));
   const near = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
   const sorted = spots.slice().sort((a, b) => near(a, v) - near(b, v)); targets.push(...sorted.slice(0, 1)); while (targets.length < n) targets.push(pick(spots));
   targets.slice(0, n).forEach((tg, i) => later(i * .7, () => {
-    const side = tg.x < W / 2 ? -1 : 1;
-    S.waiters.push(Object.assign(look(i % 2 === 0), { kind: 'waiter', name: '', x: side < 0 ? -80 : W + 80, y: CFG.floorBottom + 10, tx: tg.x, ty: tg.y + 58, walking: true, state: 'in', scale: scaleAt(CFG.floorBottom), bottleTray: true, target: tg, top: '#222', dress: '#111', cheers: 0, hem: 24, say: '', sayT: 0 }));
+    const be = barEnd(tg); bartender.give = S.t + 1.2; snd.clink();
+    S.waiters.push(Object.assign(look(i % 2 === 0), { kind: 'waiter', name: '', x: be.x, y: be.y, home: be, tx: tg.x, ty: tg.y + 58, walking: true, state: 'in', scale: scaleAt(be.y), bottleTray: true, target: tg, top: '#222', dress: '#111', cheers: 0, hem: 24, say: '', sayT: 0 }));
   }));
   snd.bell(); voice.say('k_barman', { gap: 6000 });
 }
@@ -633,12 +643,15 @@ function exitViewer(v) {
   sendOut(v);
 }
 function startExitWave() {
-  const pool = S.viewers.filter(v => !v.leaving && (v.state === 'floor' || v.state === 'table') && S.t - v.born > 8);
-  if (pool.length < 2) { S.nextExit = S.t + 10; return; }
-  const n = clamp(Math.ceil(pool.length * .4), 1, 6), chosen = pool.slice().sort(() => Math.random() - .5).slice(0, n);
-  S.guards.push(Object.assign(look(false), { kind: 'guard', glasses: true, cross: true, name: '', x: -80, y: CFG.floorBottom - 20, tx: 120, ty: CFG.floorBottom - 20, walking: true, state: 'in', until: S.t + 6 + Math.ceil(n / 2) * 3, scale: scaleAt(CFG.floorBottom) * 1.1, hairStyle: 0, top: '#0b0b12', cheers: 0, hem: 0 }));
-  ledPush('SIGURIA: PJESË-PJESË DALIN NGA KLUBI  ★  JEP LIKE DHE KTHEHESH', '#ff3b4f', true); voice.say('k_exit', { gap: 0 });
-  chosen.forEach((v, i) => later(1.5 + Math.floor(i / 2) * 3, () => exitViewer(v)));
+  const idle = v => S.t - (v.act || v.born) >= CFG.idleSec;
+  const cand = S.viewers.filter(v => !v.leaving && (v.state === 'floor' || v.state === 'table') && S.t - v.born > 8 && idle(v));
+  const real = cand.filter(v => !v.ambient).sort((a, b) => a.act - b.act), amb = cand.filter(v => v.ambient).slice(0, 1);
+  const chosen = real.slice(0, 6).concat(amb);
+  if (!chosen.length) { S.nextExit = S.t + 8; return; }
+  S.guards.push(Object.assign(look(false), { kind: 'guard', glasses: true, cross: true, name: '', x: -80, y: CFG.floorBottom - 20, tx: 120, ty: CFG.floorBottom - 20, walking: true, state: 'in', until: S.t + 7 + Math.ceil(chosen.length / 2) * 3, scale: scaleAt(CFG.floorBottom) * 1.1, hairStyle: 0, top: '#0b0b12', cheers: 0, hem: 0 }));
+  ledPush('SIGURIA: ATA QË NUK JANË AKTIVË ME LIKE DALIN NGA KLUBI  ★  JEP LIKE DHE KTHEHESH', '#ff3b4f', true); voice.say('k_exit', { gap: 0 });
+  chosen.forEach(v => { v.say = 'Zzz… 😴'; v.sayT = 3.2; });             // paralajmërim: kush jep like në këto sekonda qëndron
+  chosen.forEach((v, i) => later(3.5 + Math.floor(i / 2) * 3, () => { if (S.t - (v.act || 0) < 3) { v.say = 'Qëndroj!'; v.sayT = 2; return; } exitViewer(v); }));
 }
 function pop(x, y) {
   snd.cork(); snd.fizz(); S.flash = .18; S.flashCol = '#ffe9a8';
@@ -656,7 +669,7 @@ function crown(v) {
 function P(o) { S.parts.push(Object.assign({ vx: 0, vy: 0, g: 0, life: 1, size: 4, col: '#fff', type: 'dot', rot: 0, vr: 0 }, o, { max: o.life })); }
 function floatText(x, y, text, col) { S.floats.push({ x, y, text, col, t: 0 }); }
 function confetti(x, y, n) { for (let i = 0; i < n; i++) P({ x, y, vx: rnd(-280, 280), vy: rnd(-460, -120), g: 520, life: rnd(1.4, 2.4), size: rnd(6, 11), col: pick(OUTFITS), type: 'confetti', rot: rnd(0, 6), vr: rnd(-9, 9) }); }
-function pushBanner(kind, l1, l2) { S.queue.push({ kind, l1, l2 }); if (S.queue.length > 12) S.queue.splice(1, 1); }
+function pushBanner(kind, l1, l2, img) { S.queue.push({ kind, l1, l2, img }); if (S.queue.length > 12) S.queue.splice(1, 1); }
 const girlsAll = () => [...stageGirls, ...vipSlots.map(s => s.dancer), ...S.girls];
 
 /* ------------------------------ ngjarjet ------------------------------ */
@@ -673,9 +686,9 @@ function comeBack(rec) {
 function onJoin(user, avatar) {
   if (!user) return;
   const rec = awayRec(user); if (rec) { comeBack(rec); return; }
-  const isNew = !S.byName.has(user), v = addViewer(user); setPhoto(v, avatar); v.jump = 1;
+  const isNew = !S.byName.has(user), v = addViewer(user); setPhoto(v, avatar); v.jump = 1; v.act = S.t;
   if (isNew) { S.joined++; if (LED.queue.length < 4) ledPush(`MIRË SE ERDHE NË KLUB, ${user}!`, '#ff4fa3'); }
-  pushBanner('join', 'SAPO HYRI NË KLUB:', '@' + user);
+  pushBanner('join', 'SAPO HYRI NË KLUB:', '@' + user, v.img);
   snd.join(); voice.say('k_welcome', { gap: 9000 });
   if (v.partner) later(2.2, () => { if (girlsAll().filter(g => g.sayT > 0).length < 2) dancerSay(v.partner, pick(['k_d1', 'k_d4', 'k_d3']), 6000); });
 }
@@ -686,7 +699,7 @@ function onGift(user, gname, d, count, avatar) {
   S.scores[user] = (S.scores[user] || 0) + total; S.tips += total * CFG.lek; v.jump = 1;
   const nm = user.toUpperCase(), gl = gname ? ` · ${gname}` : '';
   const label = item ? `${item.icon} ${item.name.toUpperCase()}${count > 1 ? ' ×' + count : ''} → ${item.out} ${item.label.toUpperCase()}` : `🎁 ${gname || 'DHURATË'}${count > 1 ? ' ×' + count : ''} → 🥂 GOTË PËR TË GJITHË`;
-  if (total >= 100) { S.hero = { t: 0, dur: 3.4, name: user, line: label }; snd.fanfare(); voice.say('k_hero', { text: `Faleminderit, ${user}, për dhuratën!`, prio: true, gap: 3000 }); }
+  if (total >= 100) { S.hero = { t: 0, dur: 3.4, name: user, line: label, img: v.img }; snd.fanfare(); voice.say('k_hero', { text: `Faleminderit, ${user}, për dhuratën!`, prio: true, gap: 3000 }); }
   const them = v.partner || pick(girlsAll());
   if (!item) { // jashtë menusë: emri në LED + gotë për gjithë lokalin
     S.used.other = S.t; pushBanner('bottle', '🥂 GOTË PËR GJITHË LOKALIN', `@${user} qeras të gjithë!`);
@@ -712,7 +725,6 @@ function onGift(user, gname, d, count, avatar) {
 const goVipAbort = v => { const s = vipSlots.find(x => x.viewer === v); if (s) vipLeave(s); };
 function onLike(user, count, avatar) {
   const rec = awayRec(user); if (rec) { comeBack(rec); return; }               // like nga ai që ka dalë → kthehet vetë
-  if (S.away.length && ++S.likeCnt % 2 === 0) comeBack(S.away[0]);              // like të tjera kthejnë një nga një, pa tabelë
   S.likeBudget = Math.min(S.likeBudget + Math.min(count || 1, 5), 10);
   if (S.likeBudget < 1) return; S.likeBudget -= 1;
   const v = getViewer(user, avatar); S.tips += CFG.lek * .2;
@@ -739,7 +751,7 @@ function nextSong(manual) {
   S.song = (S.song + 1) % SONGS.length; S.songStart = S.t; S.nextSong = S.t + 75; S.lastLine = -1;
   pushBanner('song', '🎤 KËNGA E RE:', song().title); voice.say('k_song', { gap: 0, prio: true });
 }
-window.__game = { handle, S, nextSong, CFG, snd, voice };
+window.__game = { handle, S, nextSong, CFG, snd, voice, demoAvatar };
 
 /* ------------------------------ lidhja WebSocket ------------------------------ */
 (function connect() {
@@ -751,17 +763,21 @@ window.__game = { handle, S, nextSong, CFG, snd, voice };
   ws.onclose = () => { S.status = 'offline'; setTimeout(connect, 3000); };
   ws.onerror = () => ws.close();
 })();
+function demoAvatar(n) {
+  const h = [...n].reduce((a, c) => a + c.charCodeAt(0), 0) * 37 % 360, e = pick(['😀', '😎', '🤠', '🥳', '😄', '🧑‍🎤', '👩‍🎓', '🧔']);
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${h},85%,62%)"/><stop offset="1" stop-color="hsl(${(h + 60) % 360},80%,40%)"/></linearGradient></defs><rect width="128" height="128" fill="url(#g)"/><text x="64" y="88" font-size="72" text-anchor="middle">${e}</text></svg>`);
+}
 const fake = () => pick(['Arbër', 'Elira', 'Dritan', 'Blerta', 'Gent', 'Sara', 'Kristi', 'Ola', 'Mark', 'Jon', 'Era', 'Rei', 'Besa', 'Alban']) + (Math.random() < .5 ? '_' + rint(1, 99) : '');
 if (Q.has('demo')) (function loop() {
   const r = Math.random();
-  if (r < .4) handle({ type: 'join', user: fake() });
+  if (r < .4) { const u = fake(); handle({ type: 'join', user: u, avatar: demoAvatar(u) }); }
   else if (r < .75) handle({ type: 'gift', user: Math.random() < .6 && S.viewers.length ? pick(S.viewers.filter(v => !v.ambient).concat([{ name: fake() }])).name : fake(), gift: 'Dhuratë', diamonds: pick([1, 1, 1, 5, 5, 10, 30, 30, 100, 100, 1000]), count: rint(1, 3) });
   else handle({ type: 'like', user: fake(), count: rint(1, 5) });
   setTimeout(loop, rnd(500, 1800));
 })();
 addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
-  if (k === 'j') handle({ type: 'join', user: fake() });
+  if (k === 'j') { const u = fake(); handle({ type: 'join', user: u, avatar: demoAvatar(u) }); }
   else if (k === 'l') handle({ type: 'like', user: fake(), count: 3 });
   else if (k === 'k') nextSong(true);
   else if (k === 'm') snd.toggle();
@@ -796,7 +812,8 @@ function update(dt) {
   for (let i = S.viewers.length - 1; i >= 0; i--) {
     const v = S.viewers[i]; v.sayT = Math.max(0, (v.sayT || 0) - dt); v.cheers = Math.max(0, v.cheers - dt); if (v.jump > 0) v.jump = Math.max(0, v.jump - dt * 1.6);
     if (v.state === 'tovip') {
-      if (walk(v, dt, 230)) { const s = v.slot; v.state = 'vip'; v.seated = true; v.scale = 1.0; v.x = s.x - 40 * s.dir; v.y = s.y; s.until = S.t + s.sec;
+      const dn = v.slot.dancer; dn.keepScale = true; dn.walking = true; dn.tx = v.x + 52 * v.slot.dir; dn.ty = v.y; dn.flip = -v.slot.dir; walk(dn, dt, 250); // kërcimtarja vjen te ai dhe e shoqëron deri në divan
+      if (walk(v, dt, 230)) { const s = v.slot; dn.walking = false; v.state = 'vip'; v.seated = true; v.scale = 1.0; v.x = s.x - 40 * s.dir; v.y = s.y; s.until = S.t + s.sec;
         s.dancer.seated = true; s.dancer.x = s.x + 40 * s.dir; s.dancer.y = s.y; s.dancer.flip = -s.dir; v.sofa = s.sofa; s.dancer.sofa = s.sofa; v.seed = s.dancer.seed;
         v.say = 'Mirë se erdha!'; v.sayT = 2; snd.cheer(); voice.say('k_vip', { gap: 5000 }); pop(s.x, s.y); s.bottleUntil = S.t + 40; }
     } else if (v.state === 'vip') {
@@ -828,7 +845,7 @@ function update(dt) {
         const near = S.viewers.find(o => o.state !== 'floor' && Math.hypot(o.x - tg.x, o.y - tg.y) < 120); if (near) { near.say = 'Gëzuar!'; near.sayT = 3; }
         voice.say('k_cheers', { gap: 3500 }); snd.cheer(); snd.clink(); confetti(w.x, w.y - 100, 18);
       }
-    } else if (w.state === 'serve' && S.t - w.t0 > 1.2) { w.state = 'out'; w.tx = w.x < W / 2 ? -100 : W + 100; w.ty = w.y; w.walking = true; }
+    } else if (w.state === 'serve' && S.t - w.t0 > 1.2) { w.state = 'out'; w.tx = w.home ? w.home.x : (w.x < W / 2 ? -100 : W + 100); w.ty = w.home ? w.home.y : w.y; w.walking = true; }
     else if (w.state === 'out') { if (walk(w, dt, 230)) S.waiters.splice(i, 1); }
   }
   for (const tb of S.tables) { tb.spark = Math.max(0, tb.spark - dt); if (tb.spark > 0 && Math.random() < dt * 40) P({ x: tb.x - 20 + rnd(-6, 6), y: tb.y - 130, vx: rnd(-40, 40), vy: rnd(-120, -30), g: 200, life: .6, size: rnd(2, 4), col: '#ffe9a8', type: 'star' }); }
@@ -997,16 +1014,17 @@ function drawBanner() {
   const acc = { join: '#ff4fa3', money: '#3ddc84', vip: '#ffd60a', bottle: '#4cc9f0', king: '#b84dff', song: '#ff9f1c' }[bn.kind] || '#ff4fa3';
   ctx.save(); ctx.globalAlpha = k; ctx.shadowColor = acc; ctx.shadowBlur = 24; ctx.fillStyle = 'rgba(10,6,28,.9)'; rr(ctx, x, y, w, h, 22); ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = acc; ctx.lineWidth = 3; ctx.stroke();
   ctx.fillStyle = acc; rr(ctx, x, y, 14, h, 7); ctx.fill(); ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-  fitText(ctx, bn.l1, w - 70, 26, '800'); ctx.fillStyle = acc; ctx.fillText(bn.l1, x + 38, y + 36);
-  fitText(ctx, bn.l2, w - 70, 42, '900'); ctx.fillStyle = '#fff'; ctx.fillText(bn.l2, x + 38, y + 80); ctx.restore();
+  let tx = x + 38; if (bn.img) { avatarCircle(bn.img, x + 66, y + h / 2, 36, acc); tx = x + 122; }
+  fitText(ctx, bn.l1, w - (tx - x) - 30, 26, '800'); ctx.fillStyle = acc; ctx.fillText(bn.l1, tx, y + 36);
+  fitText(ctx, bn.l2, w - (tx - x) - 30, 42, '900'); ctx.fillStyle = '#fff'; ctx.fillText(bn.l2, tx, y + 80); ctx.restore();
 }
 function drawHero() {
   const h = S.hero; if (!h) return; const k = h.t / h.dur, a = clamp(k < .12 ? k / .12 : k > .8 ? (1 - k) / .2 : 1, 0, 1), sc = .85 + .15 * Math.min(1, k / .12);
   ctx.save(); ctx.translate(W / 2, 880); ctx.scale(sc, sc); ctx.globalAlpha = a;
   ctx.shadowColor = '#ffb703'; ctx.shadowBlur = 40; ctx.fillStyle = 'rgba(12,8,32,.93)'; rr(ctx, -400, -90, 800, 180, 30); ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = '#ffd60a'; ctx.lineWidth = 5; ctx.stroke();
-  ctx.font = '80px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('🥂', -320, 6);
-  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.font = '900 24px "Segoe UI",Arial,sans-serif'; ctx.fillStyle = '#ffd60a'; ctx.fillText('★ MIKPRITËSI I NATËS', -240, -36);
-  fitText(ctx, '@' + h.name, 600, 54, '900'); ctx.fillStyle = '#fff'; ctx.fillText('@' + h.name, -240, 22); fitText(ctx, h.line, 600, 32, '800'); ctx.fillStyle = '#ff9f1c'; ctx.fillText(h.line, -240, 66); ctx.restore();
+  if (h.img) avatarCircle(h.img, -312, 0, 66, '#ffd60a'); else { ctx.font = '80px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('🥂', -320, 6); }
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.font = '900 24px "Segoe UI",Arial,sans-serif'; ctx.fillStyle = '#ffd60a'; ctx.fillText('★ MIKPRITËSI I NATËS', -220, -36);
+  fitText(ctx, '@' + h.name, 580, 54, '900'); ctx.fillStyle = '#fff'; ctx.fillText('@' + h.name, -220, 22); fitText(ctx, h.line, 580, 32, '800'); ctx.fillStyle = '#ff9f1c'; ctx.fillText(h.line, -220, 66); ctx.restore();
 }
 function drawHUD(t) {
   ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
@@ -1023,8 +1041,11 @@ function drawHUD(t) {
   const real = S.viewers.filter(v => !v.ambient && !v.leaving).length, top = Object.entries(S.scores).sort((a, b) => b[1] - a[1]).slice(0, 3), medals = ['🥇', '🥈', '🥉'];
   ctx.fillStyle = 'rgba(10,6,28,.82)'; rr(ctx, 40, 1590, W - 80, 84, 18); ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,.2)'; ctx.lineWidth = 2; ctx.stroke();
   ctx.textBaseline = 'middle'; ctx.font = '800 25px "Segoe UI",Arial,sans-serif'; ctx.fillStyle = '#fff'; ctx.fillText(`💃 ${real} në klub  ·  💰 ${money(S.tips)} LEK bakshish  ·  🛋️ ${vipSlots.filter(s => s.viewer).length}/4 VIP`, W / 2, 1615);
-  const tt = top.length ? top.map(([n, s], i) => `${medals[i]} @${n.length > 11 ? n.slice(0, 10) + '…' : n} ${s}`).join('   ') : '🏆 Dërgo një dhuratë për të hyrë në renditje!';
-  fitText(ctx, tt, W - 130, 24, '700'); ctx.fillStyle = '#ffd60a'; ctx.fillText(tt, W / 2, 1651);
+  if (top.length) {
+    const slot = (W - 120) / 3; ctx.textAlign = 'left'; ctx.font = '800 22px "Segoe UI",Arial,sans-serif';
+    top.forEach(([n, sc], i) => { const x = 60 + i * slot; avatarCircle(S.photos[n], x + 18, 1651, 18, ['#ffd60a', '#c9c9d6', '#cd7f32'][i]); ctx.fillStyle = '#ffd60a'; fitText(ctx, `@${n}  ${sc}`, slot - 54, 22, '800'); ctx.fillText(`@${n}  ${sc}`, x + 44, 1652); });
+    ctx.textAlign = 'center';
+  } else { fitText(ctx, '🏆 Dërgo një dhuratë për të hyrë në renditje!', W - 130, 24, '700'); ctx.fillStyle = '#ffd60a'; ctx.fillText('🏆 Dërgo një dhuratë për të hyrë në renditje!', W / 2, 1651); }
   ctx.textAlign = 'center'; ctx.font = '700 22px "Segoe UI",Arial,sans-serif';
   outlined(ctx, 'LIKE = lekë për kërcimtaret  ·  Shkruaj !kenge për këngën tjetër', W / 2, 1716, '#fff', 'rgba(0,0,0,.8)', 4);
   outlined(ctx, '🥂 Dhurata nga menuja lart = çmimi i saj  ·  çdo tjetër = gotë për të gjithë!', W / 2, 1752, '#ffd60a', 'rgba(0,0,0,.8)', 4);
@@ -1055,6 +1076,8 @@ function render() {
     figure(o, t);
   }
   for (const o of list) if (!o.draw && (o.kind === 'viewer' || o.kind === 'hostess' || o.kind === 'vip' || o.kind === 'pole')) tag(o);
+  for (const v of S.viewers) if (!v.ambient && !v.leaving && S.t - v.born < 5 && v.state === 'floor') { const k = 1 - (S.t - v.born) / 5; ctx.save(); ctx.globalCompositeOperation = 'lighter'; const g = ctx.createRadialGradient(v.x, v.y - 60, 6, v.x, v.y - 60, 150); g.addColorStop(0, `rgba(255,240,200,${.42 * k})`); g.addColorStop(1, 'rgba(255,240,200,0)'); ctx.fillStyle = g; ctx.fillRect(v.x - 150, v.y - 210, 300, 300); ctx.restore(); }
+  if (bartender.sayT > 0) tag(bartender);
   for (const bl of S.bills) drawBill(bl);
   drawParts(); drawFog(t);
   for (const f of S.floats) { const k = f.t / .9; ctx.save(); ctx.translate(f.x, f.y - k * 50); ctx.globalAlpha = 1 - k * k; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '900 30px Impact,"Arial Black",sans-serif'; outlined(ctx, f.text, 0, 0, f.col, '#000', 6); ctx.restore(); }

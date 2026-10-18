@@ -260,7 +260,7 @@
   "rate": "+5%"
  },
  "k_exit": {
-  "text": "Pjesë-pjesë, dilni nga klubi, ju lutem!",
+  "text": "Ata që nuk janë aktivë dalin nga klubi. Jepni like për të qëndruar!",
   "voice": "ilir",
   "rate": "+5%"
  },
@@ -276,6 +276,11 @@
  },
  "k_glass": {
   "text": "Gotë për ty! Gëzuar!",
+  "voice": "anila",
+  "rate": "+10%"
+ },
+ "k_bring": {
+  "text": "Gotën tuaj, urdhëroni!",
   "voice": "anila",
   "rate": "+10%"
  }

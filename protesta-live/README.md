@@ -76,10 +76,12 @@ Klub nate i animuar, me të njëjtën urë TikTok (`2-TIKTOK.bat`). Nise me **`1
   🌹 Lule (1) → 🥂 **gotë** · 🫰 Zemër (5) → 💸 **shi parash** · 🍩 Donat (30) → 🛋️ **VIP me kërcimtaren** · 🫶 Zemra (100) → 🍾 **shishe në tavolina** · 🦁 Luan → 👑 **MBRETI I KLUBIT**.
   **Çdo dhuratë tjetër** (jashtë menusë) → emri i dërguesit del në LED dhe **gotë për gjithë lokalin** (të gjithë ngrenë gotat, kamerierë kalojnë nëpër pistë).
 - **LED që lëviz** lart në lokal (matricë me pika): mirëseardhje, dhuruesit me emër, promocionet e menusë, renditja, njoftime të sigurisë.
-- **Dalje "pjesë-pjesë"** një herë në ~50 s (`?exit=50`, `?exit=0` e fik): një roje del në derë dhe disa nga të pranishmit largohen në grupe të vogla.
-  **Kush jep LIKE kthehet** (i njëjti shikues me të njëjtën pamje); like të tjera kthejnë ata që kanë dalë një nga një. Pa tabelë; vetëm një njoftim i shkurtër në LED.
+- **Dalin ata që nuk janë aktivë**: kontroll çdo ~25 s (`?exit=25`, `?exit=0` e fik); dalin pjesë-pjesë (në grupe të vogla, me një roje në derë) ata që **nuk kanë dhënë like, dhuratë ose koment për 60 s**
+  (`?idle=60`). Para daljes marrin një paralajmërim "Zzz…" — kush jep like në ato sekonda qëndron. **Vetëm like-u (ose dhurata/hyrja) e vetë shikuesit e kthen** me të njëjtën pamje. Pa tabelë; vetëm njoftim në LED.
+- **Dhuratat sillen nga dikush**: 🌹 → barmeni i jep gotën një kameriere që ia sjell vetë shikuesit (ngrenë gotat me kërcimtaren) · 🍩 → kërcimtarja e VIP-it vjen, e shoqëron deri në divan ·
+  🫶 → kamerierë me shishe e shkëndija nisen nga banaku drejt tavolinave · çdo dhuratë tjetër → kamerierë kalojnë nëpër pistë me gota për të gjithë.
 - **Muzika** sintetizohet vetë (house / hip-hop / valle ballkanike; `!kenge` ose `K`). Numërues bakshishi në LEK, renditje, karta e mikpritësit.
-- Personazhet janë të stilizuar dhe të veshur; shikuesit shfaqen me figura të vizatuara, jo me foto reale (`?photos=1` e ndez).
+- **Fotot e ndjekësve**: fytyra e figurës është fotoja e profilit të shikuesit (me rreth ngjyrë), dhe del edhe në banderolën e hyrjes, në kartën e dhuruesit dhe në renditjen e poshtme. Hyrja e re ndriçohet me dritë. `?photos=0` i fik (kthen figurat e vizatuara). Personazhet janë të stilizuar dhe të veshur.
 - **Nuk ndalet kur punon me diçka tjetër**: dritarja hapet me flamuj që e ndalojnë uljen e prioritetit kur është prapa/e mbuluar, dhe një orë në Worker e vazhdon lojën dhe muzikën.
   Mos e minimizo (minimizimi e ndalon vizatimin dhe kapjen); mjafton ta mbulosh me dritare të tjera.
 - Nëse ecën ngadalë: `?norefl=1` (pa reflektime). `?bloom=1` shton shkëlqim (kërkon GPU).

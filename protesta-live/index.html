@@ -1280,12 +1280,25 @@ function render() {
   drawHUD(t);
 }
 
-let last = performance.now();
+let last = performance.now(), lastFrameAt = performance.now();
 function frame(now) {
-  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  const dt = Math.min(.05, (now - last) / 1000); last = now; lastFrameAt = performance.now();
   update(dt); render(); requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+// ---- punon edhe kur dritarja është prapa / e mbuluar / në tab tjetër: kur kuadrot ndalojnë, një orë në Worker e vazhdon lojën ----
+(function keepAlive() {
+  let lastBg = performance.now();
+  const bgStep = () => {
+    const now = performance.now();
+    if (now - lastFrameAt > 300) { let dt = Math.min((now - lastBg) / 1000, 3); while (dt > 0) { const d = Math.min(dt, .1); update(d); dt -= d; } }
+    lastBg = now;
+  };
+  try { const wk = new Worker(URL.createObjectURL(new Blob(['setInterval(()=>postMessage(0),100)'], { type: 'text/javascript' }))); wk.onmessage = bgStep; } catch (e) { setInterval(bgStep, 250); }
+  const wake = () => { try { navigator.wakeLock && navigator.wakeLock.request('screen').catch(() => {}); } catch (e) {} };
+  wake(); document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); });
+})();
+
 })();
 </script>
 </body>

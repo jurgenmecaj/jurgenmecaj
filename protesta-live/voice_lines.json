@@ -258,5 +258,25 @@
   "text": "Një shishe e re për klubin!",
   "voice": "ilir",
   "rate": "+5%"
+ },
+ "k_exit": {
+  "text": "Pjesë-pjesë, dilni nga klubi, ju lutem!",
+  "voice": "ilir",
+  "rate": "+5%"
+ },
+ "k_back": {
+  "text": "Mirë se u ktheve!",
+  "voice": "anila",
+  "rate": "+10%"
+ },
+ "k_toast": {
+  "text": "Gëzuar! Një gotë për të gjithë lokalin!",
+  "voice": "ilir",
+  "rate": "+10%"
+ },
+ "k_glass": {
+  "text": "Gotë për ty! Gëzuar!",
+  "voice": "anila",
+  "rate": "+10%"
  }
 }

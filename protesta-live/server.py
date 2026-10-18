@@ -119,6 +119,8 @@ def open_window(http_port: int, ws_port: int, page: str = "") -> None:
             exe = find_edge()
             profile = str(ROOT / ".shfletues-profil")
             args = [f"--app={url}", "--window-size=540,960", "--autoplay-policy=no-user-gesture-required",
+                    "--disable-features=CalculateNativeWinOcclusion", "--disable-backgrounding-occluded-windows",
+                    "--disable-renderer-backgrounding", "--disable-background-timer-throttling",
                     f"--user-data-dir={profile}", "--no-first-run", "--no-default-browser-check"]
             if exe:
                 subprocess.Popen([exe, *args])

@@ -72,10 +72,16 @@ Klub nate i animuar, me të njëjtën urë TikTok (`2-TIKTOK.bat`). Nise me **`1
   të sintetizuar. **Këngëtari këndon** me zë të sintetizuar (çdo fjalë e vargut është notë me zanoren e saj) dhe teksti shfaqet si karaoke. Zërat shqip: shih `voice_lines.json` (klipet me `3-ZERAT.bat`).
 - **Mjedisi**: skenë me altoparlantë që pulsojnë, ekran LED me karaoke, prozhektorë lëvizës, pistë me pllaka drite, mjegull, reflektime, **bar me barmen** që shkund,
   **6 tavolina** me llamba, gota dhe karrige — shikuesit ulen aty herë pas here — dhe 4 **divane VIP**.
-- **Dhuratat**: 💎1+ 💵 lekë te kërcimtarja · 💎5+ 💸 shi parash · 💎30+ 🛋️ **VIP** (ulesh me kërcimtaren) · 💎100+ 🍾 **shishe në tavolina** (kamerierë me shkëndija, të gjithë ngrenë gotat)
-  · 💎1000+ ose emër *Lion/Luan* 👑 **MBRETI I KLUBIT** (fron, kurorë, stuhi parash). Pragjet: `TIERS`/`CFG` te klubi.html.
+- **Menuja e dhuratave** (shirit lart me ikona; njihen sipas emrit ose vlerës në 💎, ndryshohen te `GIFT_MENU` në klubi.html):
+  🌹 Lule (1) → 🥂 **gotë** · 🫰 Zemër (5) → 💸 **shi parash** · 🍩 Donat (30) → 🛋️ **VIP me kërcimtaren** · 🫶 Zemra (100) → 🍾 **shishe në tavolina** · 🦁 Luan → 👑 **MBRETI I KLUBIT**.
+  **Çdo dhuratë tjetër** (jashtë menusë) → emri i dërguesit del në LED dhe **gotë për gjithë lokalin** (të gjithë ngrenë gotat, kamerierë kalojnë nëpër pistë).
+- **LED që lëviz** lart në lokal (matricë me pika): mirëseardhje, dhuruesit me emër, promocionet e menusë, renditja, njoftime të sigurisë.
+- **Dalje "pjesë-pjesë"** një herë në ~50 s (`?exit=50`, `?exit=0` e fik): një roje del në derë dhe disa nga të pranishmit largohen në grupe të vogla.
+  **Kush jep LIKE kthehet** (i njëjti shikues me të njëjtën pamje); like të tjera kthejnë ata që kanë dalë një nga një. Pa tabelë; vetëm një njoftim i shkurtër në LED.
 - **Muzika** sintetizohet vetë (house / hip-hop / valle ballkanike; `!kenge` ose `K`). Numërues bakshishi në LEK, renditje, karta e mikpritësit.
 - Personazhet janë të stilizuar dhe të veshur; shikuesit shfaqen me figura të vizatuara, jo me foto reale (`?photos=1` e ndez).
+- **Nuk ndalet kur punon me diçka tjetër**: dritarja hapet me flamuj që e ndalojnë uljen e prioritetit kur është prapa/e mbuluar, dhe një orë në Worker e vazhdon lojën dhe muzikën.
+  Mos e minimizo (minimizimi e ndalon vizatimin dhe kapjen); mjafton ta mbulosh me dritare të tjera.
 - Nëse ecën ngadalë: `?norefl=1` (pa reflektime). `?bloom=1` shton shkëlqim (kërkon GPU).
 - Kujdes: tema klubi/kërcimtare mund t'i nënshtrohet rregullave të TikTok-ut për përmbajtje sugjeruese; mbaje stilin e pastër.
 

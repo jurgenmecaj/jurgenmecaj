@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="sq">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Klipi · Player me panel</title>
+<style>
+  :root {
+    --bg: #0d1017; --card: #161b26; --line: #262d3d; --txt: #e8ecf4; --mut: #8b95ab;
+    --acc: #e11d48; --acc2: #ff4d6d;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: radial-gradient(1200px 600px at 20% -10%, #1a2133, var(--bg)); color: var(--txt);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; min-height: 100vh; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; color: var(--mut); font-size: 13px; letter-spacing: .08em; text-transform: uppercase; }
+  header i { width: 9px; height: 9px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 12px var(--acc); }
+  .grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; align-items: start; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
+  .player { overflow: hidden; }
+  .ratio { position: relative; aspect-ratio: 16 / 9; background: #000; }
+  .ratio > div, .ratio iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px; border-top: 1px solid var(--line); }
+  button, a.btn { appearance: none; border: 1px solid var(--line); background: #1d2433; color: var(--txt); padding: 8px 14px;
+                  border-radius: 9px; font: inherit; font-size: 13px; cursor: pointer; text-decoration: none; transition: .15s; }
+  button:hover, a.btn:hover { border-color: var(--acc2); background: #232b3e; }
+  button.primary { background: var(--acc); border-color: var(--acc); font-weight: 600; }
+  button.primary:hover { background: var(--acc2); }
+  aside { display: grid; gap: 14px; }
+  .w { padding: 16px; }
+  .w h3 { margin: 0 0 10px; font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--mut); }
+  .title { font-size: 17px; font-weight: 650; line-height: 1.35; margin: 0 0 4px; }
+  .author { color: var(--mut); font-size: 13px; }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .stat { background: #111623; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .stat b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+  .stat span { font-size: 11px; color: var(--mut); text-transform: uppercase; letter-spacing: .06em; }
+  .prog { height: 6px; background: #111623; border-radius: 99px; overflow: hidden; margin-top: 12px; }
+  .prog > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--acc), var(--acc2)); transition: width .4s linear; }
+  .speeds { display: flex; gap: 6px; flex-wrap: wrap; }
+  .speeds button.on { border-color: var(--acc2); color: var(--acc2); }
+  .note { font-size: 12px; color: var(--mut); }
+  #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px); background: #1d2433; border: 1px solid var(--line);
+           padding: 9px 16px; border-radius: 99px; opacity: 0; transition: .25s; pointer-events: none; font-size: 13px; }
+  #toast.show { opacity: 1; transform: translateX(-50%); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><i></i><span>Klipi i zgjedhur</span></header>
+
+  <div class="grid">
+    <section class="card player">
+      <div class="ratio"><div id="yt"></div></div>
+      <div class="bar">
+        <button class="primary" id="btnStart">⏮ Nga 9:20</button>
+        <button id="btnPlay">⏯ Luaj / Pauzë</button>
+        <button id="btnBack">−10s</button>
+        <button id="btnFwd">+10s</button>
+        <button id="btnFs">⛶ Ekran i plotë</button>
+      </div>
+    </section>
+
+    <aside>
+      <div class="card w">
+        <h3>Video</h3>
+        <p class="title" id="title">Duke ngarkuar…</p>
+        <div class="author" id="author">&nbsp;</div>
+      </div>
+
+      <div class="card w">
+        <h3>Koha</h3>
+        <div class="stats">
+          <div class="stat"><b id="now">9:20</b><span>Tani</span></div>
+          <div class="stat"><b id="total">–</b><span>Gjithsej</span></div>
+          <div class="stat"><b id="since">0:00</b><span>Nga fillimi i klipit</span></div>
+          <div class="stat"><b id="left">–</b><span>Mbetet</span></div>
+        </div>
+        <div class="prog"><i id="bar"></i></div>
+      </div>
+
+      <div class="card w">
+        <h3>Shpejtësia</h3>
+        <div class="speeds" id="speeds"></div>
+      </div>
+
+      <div class="card w">
+        <h3>Ndaj</h3>
+        <div class="bar" style="padding:0;border:0">
+          <button id="btnCopy">🔗 Kopjo linkun (9:20)</button>
+          <a class="btn" id="btnYt" target="_blank" rel="noopener">▶ Hap në YouTube</a>
+        </div>
+        <p class="note" style="margin:10px 0 0">Videoja luhet nga YouTube pa u ndryshuar. Ndrysho fillimin me <code>?start=560</code> dhe fundin me <code>&amp;end=700</code> (sekonda).</p>
+      </div>
+    </aside>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+// ---- Konfigurimi (mund të ndryshohet edhe nga URL: ?v=ID&start=SEK&end=SEK) ----
+const q = new URLSearchParams(location.search);
+const VIDEO_ID = q.get('v') || '4RCe1hdTObQ';
+const START = parseInt(q.get('start') || '560', 10);   // 9:20 = 560 s
+const END = q.get('end') ? parseInt(q.get('end'), 10) : null;
+
+const $ = id => document.getElementById(id);
+const fmt = s => { s = Math.max(0, Math.floor(s)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), r = s % 60;
+  return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(r).padStart(2, '0'); };
+const toast = t => { const e = $('toast'); e.textContent = t; e.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => e.classList.remove('show'), 1800); };
+const ytLink = (t) => `https://youtu.be/${VIDEO_ID}?t=${Math.floor(t)}`;
+
+$('btnStart').textContent = '⏮ Nga ' + fmt(START);
+$('btnCopy').textContent = '🔗 Kopjo linkun (' + fmt(START) + ')';
+$('now').textContent = fmt(START);
+$('btnYt').href = ytLink(START);
+
+let player;
+const SPEEDS = [0.75, 1, 1.25, 1.5, 2];
+SPEEDS.forEach(s => {
+  const b = document.createElement('button'); b.textContent = s + '×'; if (s === 1) b.classList.add('on');
+  b.onclick = () => { player && player.setPlaybackRate(s); [...$('speeds').children].forEach(x => x.classList.toggle('on', x === b)); };
+  $('speeds').appendChild(b);
+});
+
+window.onYouTubeIframeAPIReady = () => {
+  player = new YT.Player('yt', {
+    videoId: VIDEO_ID,
+    playerVars: { start: START, end: END || undefined, rel: 0, modestbranding: 1, playsinline: 1, autoplay: 0 },
+    events: { onReady: onReady }
+  });
+};
+function onReady() {
+  const d = player.getVideoData();
+  $('title').textContent = d.title || 'Video';
+  $('author').textContent = d.author || '';
+  document.title = (d.title || 'Klipi') + ' · Klipi';
+  const dur = player.getDuration(), stop = END || dur;
+  $('total').textContent = fmt(dur);
+  setInterval(() => {
+    const t = player.getCurrentTime();
+    $('now').textContent = fmt(t);
+    $('since').textContent = fmt(t - START);
+    $('left').textContent = fmt(stop - t);
+    $('bar').style.width = Math.min(100, Math.max(0, (t - START) / Math.max(1, stop - START) * 100)) + '%';
+    $('btnYt').href = ytLink(t);
+  }, 500);
+}
+
+$('btnStart').onclick = () => { player.seekTo(START, true); player.playVideo(); };
+$('btnPlay').onclick = () => player.getPlayerState() === 1 ? player.pauseVideo() : player.playVideo();
+$('btnBack').onclick = () => player.seekTo(Math.max(START, player.getCurrentTime() - 10), true);
+$('btnFwd').onclick = () => player.seekTo(player.getCurrentTime() + 10, true);
+$('btnFs').onclick = () => { const f = player.getIframe(); (f.requestFullscreen || f.webkitRequestFullscreen).call(f); };
+$('btnCopy').onclick = async () => {
+  try { await navigator.clipboard.writeText(ytLink(START)); toast('Linku u kopjua'); } catch (e) { toast(ytLink(START)); }
+};
+
+const s = document.createElement('script'); s.src = 'https://www.youtube.com/iframe_api'; document.head.appendChild(s);
+</script>
+</body>
+</html>

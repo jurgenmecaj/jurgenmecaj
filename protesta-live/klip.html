@@ -40,6 +40,10 @@
   .prog > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--acc), var(--acc2)); transition: width .4s linear; }
   .speeds { display: flex; gap: 6px; flex-wrap: wrap; }
   .speeds button.on { border-color: var(--acc2); color: var(--acc2); }
+  .parts { display: grid; gap: 6px; max-height: 320px; overflow-y: auto; }
+  .part { display: flex; justify-content: space-between; align-items: center; text-align: left; width: 100%; }
+  .part small { color: var(--mut); font-variant-numeric: tabular-nums; }
+  .part.on { border-color: var(--acc2); background: #2a1c26; }
   .note { font-size: 12px; color: var(--mut); }
   #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px); background: #1d2433; border: 1px solid var(--line);
            padding: 9px 16px; border-radius: 99px; opacity: 0; transition: .25s; pointer-events: none; font-size: 13px; }
@@ -81,6 +85,11 @@
       </div>
 
       <div class="card w">
+        <h3>Pjesët (çdo 2 minuta)</h3>
+        <div class="parts" id="parts"></div>
+      </div>
+
+      <div class="card w">
         <h3>Shpejtësia</h3>
         <div class="speeds" id="speeds"></div>
       </div>
@@ -103,6 +112,7 @@
 const q = new URLSearchParams(location.search);
 const VIDEO_ID = q.get('v') || '4RCe1hdTObQ';
 const START = parseInt(q.get('start') || '560', 10);   // 9:20 = 560 s
+const STEP = parseInt(q.get('step') || '120', 10);  // gjatësia e çdo pjese (sek)
 const END = q.get('end') ? parseInt(q.get('end'), 10) : null;
 
 const $ = id => document.getElementById(id);
@@ -138,6 +148,7 @@ function onReady() {
   document.title = (d.title || 'Klipi') + ' · Klipi';
   const dur = player.getDuration(), stop = END || dur;
   $('total').textContent = fmt(dur);
+  buildParts(stop);
   setInterval(() => {
     const t = player.getCurrentTime();
     $('now').textContent = fmt(t);
@@ -145,7 +156,24 @@ function onReady() {
     $('left').textContent = fmt(stop - t);
     $('bar').style.width = Math.min(100, Math.max(0, (t - START) / Math.max(1, stop - START) * 100)) + '%';
     $('btnYt').href = ytLink(t);
+    markPart(t);
   }, 500);
+}
+
+let PARTS = [];
+function buildParts(stop) {
+  const box = $('parts'); box.innerHTML = ''; PARTS = [];
+  for (let a = START, i = 1; a < stop; a += STEP, i++) {
+    const b = Math.min(a + STEP, stop);
+    PARTS.push([a, b]);
+    const btn = document.createElement('button'); btn.className = 'part';
+    btn.innerHTML = `<span>Pjesa ${i}</span><small>${fmt(a)} – ${fmt(b)}</small>`;
+    btn.onclick = () => { player.seekTo(a, true); player.playVideo(); };
+    box.appendChild(btn);
+  }
+}
+function markPart(t) {
+  PARTS.forEach((p, i) => $('parts').children[i].classList.toggle('on', t >= p[0] && t < p[1]));
 }
 
 $('btnStart').onclick = () => { player.seekTo(START, true); player.playVideo(); };
